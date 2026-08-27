@@ -363,7 +363,7 @@ new webllm.WebWorkerMLCEngineHandler();`;
 
 /* ---------- chat ---------- */
 function bubble(role, text){
-  $("empty").remove?.();
+  document.getElementById("empty")?.remove();
   const el = document.createElement("div");
   el.className = "msg " + (role === "user" ? "user" : "ai");
   el.innerHTML = '<div class="who"></div><div class="body"></div><div class="foot"></div>';
@@ -389,15 +389,16 @@ async function send(){
   $("send").innerHTML = "&#9632;";
   status("busy", undefined, "thinking…");
 
-  const el = bubble("ai", "");
-  const body = el.querySelector(".body");
-  const foot = el.querySelector(".foot");
-  const caret = document.createElement("span");
-  caret.className = "caret";
-  body.appendChild(caret);
-
+  let el, body, foot, caret;
   let reply = "";
   try {
+    el = bubble("ai", "");
+    body = el.querySelector(".body");
+    foot = el.querySelector(".foot");
+    caret = document.createElement("span");
+    caret.className = "caret";
+    body.appendChild(caret);
+
     const messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history];
     const stream = await engine.chat.completions.create({
       messages,
@@ -423,13 +424,14 @@ async function send(){
         }
       }
     }
-    history.push({ role: "assistant", content: reply });
+    if (reply) history.push({ role: "assistant", content: reply });
   } catch (err) {
-    body.textContent = reply || "";
-    foot.textContent = "توقف: " + (err.message || err);
+    if (body) body.textContent = reply || "";
+    if (foot) foot.textContent = "توقف: " + (err.message || err);
+    else bubble("ai", "خطأ: " + (err.message || err));
   } finally {
-    caret.remove();
-    if (!body.textContent) body.textContent = "(لا يوجد رد)";
+    caret?.remove();
+    if (body && !body.textContent) body.textContent = "(لا يوجد رد)";
     generating = false;
     $("send").classList.remove("stop");
     $("send").innerHTML = "&#10148;";
