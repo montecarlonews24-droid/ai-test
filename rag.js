@@ -47,10 +47,41 @@ const STOP = new Set([
   "what","how","why","when","which","do","does","did","can","will","would","there","their"
 ]);
 
+/** تجذيع إنجليزي خفيف: manages / managed / managing → manag */
+function stemEn(w) {
+  if (w.length <= 3) return w;
+  if (/ies$/.test(w) && w.length > 4) w = w.slice(0, -3) + "y";
+  else if (/(sses|shes|ches|xes|zes)$/.test(w)) w = w.slice(0, -2);
+  else if (/s$/.test(w) && !/(ss|us|is)$/.test(w)) w = w.slice(0, -1);
+
+  if (!/(eed|need|feed)$/.test(w) && /(ed|ing)$/.test(w) && w.length > 4) {
+    w = w.replace(/(ed|ing)$/, "");
+    if (/(bb|dd|ff|gg|mm|nn|pp|rr|tt)$/.test(w)) w = w.slice(0, -1);
+  }
+  if (w.length > 6) w = w.replace(/(ments|ment|ness|tion|sion|able|ible|ly)$/, "");
+  if (/e$/.test(w) && w.length > 4) w = w.slice(0, -1);
+  return w;
+}
+
+/** تجذيع عربي خفيف: يشيل السوابق واللواحق الشائعة (المدرسة / مدرستهم → مدرس) */
+function stemAr(w) {
+  if (w.length <= 3) return w;
+  const pre = w.match(/^(وال|فال|بال|كال|لل|ال|و|ف|ب|ك|ل)/);
+  if (pre && w.length - pre[0].length >= 3) w = w.slice(pre[0].length);
+  const suf = w.match(/(اتها|اتهم|تهما|تهم|تها|تكم|تنا|هما|كما|ته|تك|ون|ين|ات|ان|ها|هم|هن|كم|نا|يه|تي|ه|ي|ك)$/);
+  if (suf && w.length - suf[0].length >= 3) w = w.slice(0, -suf[0].length);
+  return w;
+}
+
+const HAS_AR = /[\u0600-\u06FF]/;
+function stem(w) { return HAS_AR.test(w) ? stemAr(w) : stemEn(w); }
+
 function tokenize(s) {
   return normalize(s)
     .split(/[^\p{L}\p{N}_]+/u)
-    .filter(w => w.length > 1 && !STOP.has(w));
+    .filter(w => w.length > 1 && !STOP.has(w))
+    .map(stem)
+    .filter(Boolean);
 }
 
 /** تقدير عدد التوكنات. العربي أغلى بكثير من الإنجليزي عند نفس عدد الكلمات. */
@@ -153,10 +184,11 @@ class BM25 {
         score += idf * (f * (this.k1 + 1)) /
                  (f + this.k1 * (1 - this.b + this.b * (d.len / (this.avgdl || 1))));
       }
+      const coverage = hits / qTerms.length;
       // مكافأة صغيرة لتغطية أكثر كلمات السؤال، ولوجود العبارة حرفياً
-      if (hits) score *= (0.6 + 0.4 * (hits / qTerms.length));
+      if (hits) score *= (0.6 + 0.4 * coverage);
       if (qNorm.length > 8 && d.norm.includes(qNorm)) score *= 1.3;
-      return { ...d, score };
+      return { ...d, score, hits, coverage };
     });
 
     return scored
@@ -203,12 +235,12 @@ export class RAG {
    *  overlap        تداخل بالتوكن (40)
    *  topK           كم مقطع يدخل السياق (2 — لا تزيدها قبل ما تقيس prefill)
    *  maxContextTok  سقف السياق المسترجع (450)
-   *  minScore       أقل درجة تُقبل، تحتها نعتبر "ما لقينا" (0.6)
+   *  minCoverage    أقل نسبة من كلمات السؤال يجب أن توجد في المقطع (0.4)
    */
   constructor(opts = {}) {
     this.o = {
       chunkSize: 200, overlap: 40, topK: 2,
-      maxContextTok: 450, minScore: 0.6, ...opts
+      maxContextTok: 450, minCoverage: 0.4, ...opts
     };
     this.db = null;
     this.docs = [];        // [{id,name,text,addedAt}]
@@ -306,11 +338,13 @@ export class RAG {
    */
   async buildContext(question, opts = {}) {
     const { topK = this.o.topK, maxContextTok = this.o.maxContextTok,
-            minScore = this.o.minScore } = opts;
+            minCoverage = this.o.minCoverage } = opts;
 
     if (!this.ready) await this.init();
-    const hits = this.index.search(question, topK);
-    if (!hits.length || hits[0].score < minScore) {
+    const found = this.index.search(question, topK);
+    // على فهرس صغير درجة BM25 المطلقة لا تعني شيئاً — التغطية هي المعيار
+    const hits = found.filter(h => h.hits >= 1 && h.coverage >= minCoverage);
+    if (!hits.length) {
       return { context: "", sources: [], hits: [], tokens: 0 };
     }
 
@@ -329,7 +363,11 @@ export class RAG {
     return {
       context,
       sources: [...new Set(picked.map(h => h.source))],
-      hits: picked.map(h => ({ source: h.source, score: +h.score.toFixed(3) })),
+      hits: picked.map(h => ({
+        source: h.source,
+        score: +h.score.toFixed(3),
+        coverage: +h.coverage.toFixed(2)
+      })),
       tokens: used
     };
   }
