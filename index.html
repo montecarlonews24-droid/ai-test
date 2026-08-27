@@ -201,7 +201,31 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
         <span class="mname">Llama 3.2 — 1B</span>
         <span class="msize">~880 MB</span>
       </div>
-      <div class="mdesc">الخيار المُوصى به لجهازك. أسرع، وذاكرة أقل. إنجليزي جيد لحجمه.</div>
+      <div class="mdesc">الأسرع. منطقه ضعيف، بس ردوده مقبولة للأسئلة البسيطة.</div>
+    </div>
+
+    <div class="opt" data-model="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">
+      <div class="top">
+        <span class="mname">Qwen 2.5 — 1.5B</span>
+        <span class="msize">~1.6 GB</span>
+      </div>
+      <div class="mdesc">أقوى في المنطق والبرمجة من Llama 1B، وأبطأ منه بحوالي الثلث. جرّبه أول.</div>
+    </div>
+
+    <div class="opt" data-model="Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC">
+      <div class="top">
+        <span class="mname">Qwen 2.5 Coder — 1.5B</span>
+        <span class="msize">~1.6 GB</span>
+      </div>
+      <div class="mdesc">متخصص بالبرمجة. ممتاز بالكود، أضعف بالمحادثة العامة.</div>
+    </div>
+
+    <div class="opt" data-model="Qwen2.5-3B-Instruct-q4f16_1-MLC">
+      <div class="top">
+        <span class="mname">Qwen 2.5 — 3B</span>
+        <span class="msize">~2.5 GB</span>
+      </div>
+      <div class="mdesc">الأذكى المتاح لك. متوقع أقل من 1 tok/s على جهازك — بطيء لدرجة قد تكون غير عملية.</div>
     </div>
 
     <div class="opt" data-model="Llama-3.2-3B-Instruct-q4f16_1-MLC">
@@ -209,7 +233,7 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
         <span class="mname">Llama 3.2 — 3B</span>
         <span class="msize">~2.3 GB</span>
       </div>
-      <div class="mdesc">أذكى بوضوح، بس أبطأ بكثير على Mali-G57. جرّبه بعد ما تتأكد إن 1B شغّال.</div>
+      <div class="mdesc">أفضل من Llama 1B بوضوح، بس Qwen 3B عادةً أقوى منه بنفس الحجم.</div>
     </div>
 
     <div class="note">
@@ -283,6 +307,13 @@ $("sysp").value = store.get("sysp", DEFAULT_SYS);
 $("temp").value = store.get("temp", "0.7");
 $("tempVal").textContent = (+$("temp").value).toFixed(2);
 
+// restore the last model the user picked
+modelId = store.get("modelId", modelId);
+document.querySelectorAll(".opt").forEach(o => {
+  o.toggleAttribute("data-sel", false);
+  if (o.dataset.model === modelId) o.setAttribute("data-sel", "1");
+});
+
 /* ---------- model picker ---------- */
 document.querySelectorAll(".opt").forEach(el => {
   el.addEventListener("click", () => {
@@ -290,6 +321,7 @@ document.querySelectorAll(".opt").forEach(el => {
     document.querySelectorAll(".opt").forEach(o => o.removeAttribute("data-sel"));
     el.setAttribute("data-sel", "1");
     modelId = el.dataset.model;
+    store.set("modelId", modelId);
   });
 });
 
