@@ -220,7 +220,7 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
 
     <div class="prog" id="prog">
       <div class="bar"><i id="barFill"></i></div>
-      <div class="txt" id="progTxt">…</div>
+      <div class="txt" id="progTxt">جاري الاتصال…</div>
     </div>
   </section>
 
@@ -324,16 +324,41 @@ $("loadBtn").addEventListener("click", async () => {
 });
 
 async function createEngine(id, onProgress){
-  // prefer a worker so generation doesn't freeze the UI
+  // Try a worker first (keeps the UI responsive). Android WebView often refuses
+  // a module worker that imports a remote URL — and it fails SILENTLY, so we
+  // race it against a timeout and fall back to the main thread.
   const src = `import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 new webllm.WebWorkerMLCEngineHandler();`;
+
+  let worker = null;
   try {
     const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
-    const worker = new Worker(url, { type: "module" });
-    return await webllm.CreateWebWorkerMLCEngine(worker, id, { initProgressCallback: onProgress });
+    worker = new Worker(url, { type: "module" });
   } catch (e) {
-    return await webllm.CreateMLCEngine(id, { initProgressCallback: onProgress });
+    worker = null;
   }
+
+  if (worker) {
+    let alive = false;
+    const watch = r => { alive = true; onProgress(r); };
+    $("progTxt").textContent = "جاري التجهيز… (worker)";
+
+    const attempt = webllm.CreateWebWorkerMLCEngine(worker, id, { initProgressCallback: watch });
+    const timeout = new Promise((_, rej) =>
+      setTimeout(() => { if (!alive) rej(new Error("worker-timeout")); }, 15000)
+    );
+
+    try {
+      return await Promise.race([attempt, timeout]);
+    } catch (e) {
+      try { worker.terminate(); } catch (_) {}
+      $("progTxt").textContent = "الـ worker ما زبط — تحويل للوضع العادي…";
+    }
+  }
+
+  // main-thread fallback: slower UI during generation, but works everywhere
+  $("progTxt").textContent = "جاري التجهيز…";
+  return await webllm.CreateMLCEngine(id, { initProgressCallback: onProgress });
 }
 
 /* ---------- chat ---------- */
