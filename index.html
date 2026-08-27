@@ -2,8 +2,8 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>فحص قدرة الجهاز — تشغيل نموذج محلي</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Local AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -15,389 +15,447 @@
   --ink-soft:#5A6B7A;
   --line:#D3DAE1;
   --signal:#1B44E8;
-  --pass:#0C6E48;
-  --pass-bg:#E2F3EB;
+  --signal-soft:#E8ECFD;
+  --live:#0C6E48;
+  --live-bg:#E2F3EB;
   --warn:#8A5A05;
-  --warn-bg:#FBF0DC;
   --fail:#A82820;
-  --fail-bg:#FAE7E5;
   --sans:"IBM Plex Sans Arabic",system-ui,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
 }
-*{box-sizing:border-box}
-html,body{margin:0;padding:0}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;padding:0;overscroll-behavior:none}
 body{
-  background:var(--paper);
-  color:var(--ink);
-  font-family:var(--sans);
-  font-size:15px;
-  line-height:1.6;
-  padding:20px 16px 56px;
+  background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.6;
+  display:flex;flex-direction:column;
   -webkit-text-size-adjust:100%;
 }
-.wrap{max-width:640px;margin:0 auto}
 
-header{margin-bottom:22px}
-.eyebrow{
-  font-family:var(--mono);
-  font-size:11px;
-  letter-spacing:.14em;
-  color:var(--ink-soft);
-  text-transform:uppercase;
+/* ---------- device strip (signature) ---------- */
+.device{
+  background:var(--ink);color:#fff;
+  padding:9px 14px;
+  display:flex;align-items:center;gap:10px;
+  font-family:var(--mono);font-size:11px;
   direction:ltr;
-  text-align:right;
-  margin-bottom:8px;
+  flex:0 0 auto;
 }
-h1{font-size:25px;font-weight:700;line-height:1.3;margin:0 0 6px}
-.sub{color:var(--ink-soft);font-size:14px;margin:0}
+.pulse{
+  width:7px;height:7px;border-radius:50%;
+  background:#4A5764;flex:0 0 auto;
+}
+.pulse.ready{background:#3DDC91;box-shadow:0 0 0 0 rgba(61,220,145,.6);animation:halo 2.4s infinite}
+.pulse.busy{background:#FFC14D;animation:halo 1s infinite}
+.pulse.err{background:#FF6B5E}
+@keyframes halo{70%{box-shadow:0 0 0 7px rgba(61,220,145,0)}100%{box-shadow:0 0 0 0 rgba(61,220,145,0)}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none!important}}
+.device .name{font-weight:600;letter-spacing:.02em}
+.device .spacer{flex:1}
+.device .metric{color:#93A1AE;white-space:nowrap}
+.device .gear{
+  background:none;border:0;color:#93A1AE;padding:2px 4px;
+  font-size:15px;cursor:pointer;line-height:1;
+}
 
-/* verdict */
-.verdict{
-  background:var(--card);
-  border:1px solid var(--line);
-  border-radius:14px;
-  padding:20px;
-  margin:22px 0 26px;
-  position:relative;
-  overflow:hidden;
+/* ---------- setup ---------- */
+.stage{flex:1;overflow-y:auto;overscroll-behavior:contain}
+.setup{padding:26px 18px 40px;max-width:560px;margin:0 auto}
+.setup h1{font-size:23px;margin:0 0 8px;font-weight:700;line-height:1.35}
+.setup .lede{color:var(--ink-soft);font-size:14px;margin:0 0 22px}
+.opt{
+  background:var(--card);border:1px solid var(--line);border-radius:13px;
+  padding:15px;margin-bottom:11px;cursor:pointer;
+  display:block;
 }
-.verdict::before{
-  content:"";position:absolute;inset-inline-start:0;top:0;bottom:0;width:5px;
-  background:var(--ink-soft);transition:background .3s;
+.opt[data-sel="1"]{border-color:var(--signal);background:var(--signal-soft)}
+.opt .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.opt .mname{font-weight:600;font-size:15px}
+.opt .msize{font-family:var(--mono);font-size:11px;color:var(--ink-soft);direction:ltr}
+.opt .mdesc{font-size:13px;color:var(--ink-soft);margin-top:5px}
+.note{
+  font-size:13px;color:var(--ink-soft);
+  background:var(--card);border:1px solid var(--line);
+  border-radius:11px;padding:13px;margin:16px 0 20px;
 }
-.verdict[data-state="pass"]::before{background:var(--pass)}
-.verdict[data-state="warn"]::before{background:var(--warn)}
-.verdict[data-state="fail"]::before{background:var(--fail)}
-.verdict h2{font-size:19px;margin:0 0 8px;font-weight:700}
-.verdict p{margin:0;color:var(--ink-soft);font-size:14px}
-.verdict .rec{
-  margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);
-  font-size:14px;color:var(--ink);
-}
-.rec b{font-family:var(--mono);font-weight:600}
+.note b{color:var(--ink)}
 
-/* checks */
-.group-label{
-  font-family:var(--mono);font-size:11px;letter-spacing:.1em;
-  color:var(--ink-soft);text-transform:uppercase;
-  margin:0 0 10px;direction:ltr;text-align:right;
-}
-.checks{
-  background:var(--card);
-  border:1px solid var(--line);
-  border-radius:14px;
-  overflow:hidden;
-  margin-bottom:26px;
-}
-.row{
-  display:flex;align-items:flex-start;gap:12px;
-  padding:14px 16px;
-  border-bottom:1px solid var(--line);
-  opacity:0;transform:translateY(4px);
-  animation:in .28s ease forwards;
-}
-.row:last-child{border-bottom:0}
-@keyframes in{to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){.row{animation:none;opacity:1;transform:none}}
-.chip{
-  flex:0 0 auto;font-family:var(--mono);font-size:10px;font-weight:600;
-  padding:3px 7px;border-radius:5px;letter-spacing:.06em;
-  direction:ltr;margin-top:3px;min-width:52px;text-align:center;
-}
-.chip.pass{background:var(--pass-bg);color:var(--pass)}
-.chip.warn{background:var(--warn-bg);color:var(--warn)}
-.chip.fail{background:var(--fail-bg);color:var(--fail)}
-.chip.info{background:#E7EBF0;color:var(--ink-soft)}
-.rowbody{flex:1;min-width:0}
-.rowtitle{font-weight:600;font-size:14px}
-.rowval{
-  font-family:var(--mono);font-size:12px;color:var(--ink-soft);
-  direction:ltr;text-align:right;word-break:break-all;margin-top:2px;
-}
-.rownote{font-size:13px;color:var(--ink-soft);margin-top:4px}
-
-.loading{padding:22px 16px;color:var(--ink-soft);font-size:14px}
-.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--signal);margin-inline-start:6px;animation:blink 1s infinite}
-@keyframes blink{50%{opacity:.2}}
-
-button{
+button.primary{
   width:100%;font-family:var(--sans);font-size:15px;font-weight:600;
-  padding:14px;border-radius:11px;border:1px solid var(--signal);
+  padding:15px;border-radius:12px;border:0;
   background:var(--signal);color:#fff;cursor:pointer;
 }
-button:active{transform:translateY(1px)}
+button.primary:disabled{background:#A9B4C2;cursor:default}
 button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
-button.ghost{background:transparent;color:var(--signal);margin-top:10px}
-.copied{text-align:center;font-size:13px;color:var(--pass);margin-top:10px;min-height:20px}
-footer{margin-top:24px;font-size:12px;color:var(--ink-soft);text-align:center}
+
+/* progress */
+.prog{margin-top:20px;display:none}
+.prog.on{display:block}
+.bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--signal);transition:width .3s}
+.prog .txt{
+  font-family:var(--mono);font-size:11px;color:var(--ink-soft);
+  margin-top:9px;direction:ltr;text-align:right;word-break:break-word;
+}
+
+/* ---------- chat ---------- */
+.thread{padding:16px 14px 8px;max-width:720px;margin:0 auto}
+.msg{margin-bottom:16px;display:flex;flex-direction:column}
+.msg .who{
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  color:var(--ink-soft);margin-bottom:5px;direction:ltr;
+}
+.msg .body{
+  padding:12px 14px;border-radius:13px;
+  white-space:pre-wrap;word-wrap:break-word;
+  direction:ltr;text-align:left;font-size:15px;
+}
+.msg.user{align-items:flex-start}
+.msg.user .body{background:var(--signal);color:#fff;border-bottom-right-radius:4px}
+.msg.ai{align-items:flex-start}
+.msg.ai .body{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg .foot{
+  font-family:var(--mono);font-size:10px;color:var(--ink-soft);
+  margin-top:5px;direction:ltr;
+}
+.caret{display:inline-block;width:7px;height:15px;background:var(--ink);vertical-align:-2px;animation:blink .9s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+.empty{text-align:center;color:var(--ink-soft);font-size:14px;padding:44px 20px}
+
+/* ---------- composer ---------- */
+.composer{
+  flex:0 0 auto;background:var(--card);border-top:1px solid var(--line);
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  display:flex;gap:9px;align-items:flex-end;
+}
+.composer textarea{
+  flex:1;resize:none;font-family:var(--sans);font-size:16px;
+  border:1px solid var(--line);border-radius:12px;
+  padding:11px 13px;max-height:130px;min-height:46px;
+  direction:ltr;text-align:left;background:var(--paper);color:var(--ink);
+}
+.composer textarea:focus{outline:none;border-color:var(--signal)}
+.send{
+  flex:0 0 auto;width:46px;height:46px;border-radius:12px;border:0;
+  background:var(--signal);color:#fff;font-size:19px;cursor:pointer;
+  display:grid;place-items:center;
+}
+.send:disabled{background:#A9B4C2}
+.send.stop{background:var(--fail)}
+
+/* ---------- settings ---------- */
+.scrim{
+  position:fixed;inset:0;background:rgba(20,30,40,.5);
+  display:none;z-index:20;
+}
+.scrim.on{display:block}
+.sheet{
+  position:fixed;inset-inline:0;bottom:0;z-index:21;
+  background:var(--card);border-radius:17px 17px 0 0;
+  padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+  max-height:88vh;overflow-y:auto;
+  transform:translateY(100%);transition:transform .24s ease;
+}
+.sheet.on{transform:none}
+.sheet h2{font-size:17px;margin:0 0 4px}
+.sheet .hint{font-size:13px;color:var(--ink-soft);margin:0 0 16px}
+.field{margin-bottom:17px}
+.field label{display:block;font-weight:600;font-size:14px;margin-bottom:6px}
+.field .sub{font-size:12.5px;color:var(--ink-soft);margin-bottom:7px}
+.field textarea{
+  width:100%;min-height:110px;resize:vertical;
+  font-family:var(--mono);font-size:13px;line-height:1.55;
+  border:1px solid var(--line);border-radius:11px;padding:11px;
+  direction:ltr;text-align:left;background:var(--paper);color:var(--ink);
+}
+.field input[type=range]{width:100%;accent-color:var(--signal)}
+.rowline{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);direction:ltr}
+.ghostbtn{
+  width:100%;padding:13px;border-radius:11px;
+  border:1px solid var(--line);background:transparent;
+  font-family:var(--sans);font-size:14.5px;color:var(--ink);cursor:pointer;
+  margin-bottom:9px;
+}
+.ghostbtn.danger{color:var(--fail);border-color:#F0C9C5}
 </style>
 </head>
 <body>
-<div class="wrap">
 
-<header>
-  <div class="eyebrow">LOCAL MODEL / CAPABILITY CHECK</div>
-  <h1>هل يقدر جهازك يشغّل نموذج AI محلي؟</h1>
-  <p class="sub">فحص يشتغل داخل نفس البيئة اللي رح يشتغل فيها التطبيق. افتح هاي الصفحة من داخل تطبيق Median، مش من المتصفح.</p>
-</header>
-
-<div class="verdict" id="verdict" data-state="">
-  <h2 id="vtitle">جاري الفحص…</h2>
-  <p id="vtext">ثواني قليلة.</p>
+<div class="device">
+  <span class="pulse" id="pulse"></span>
+  <span class="name" id="dName">NOT LOADED</span>
+  <span class="spacer"></span>
+  <span class="metric" id="dMetric"></span>
+  <button class="gear" id="gear" aria-label="الإعدادات" hidden>&#9881;</button>
 </div>
 
-<p class="group-label">RESULTS</p>
-<div class="checks" id="checks">
-  <div class="loading">تشغيل الفحوصات<span class="dot"></span></div>
+<div class="stage" id="stage">
+
+  <!-- setup -->
+  <section class="setup" id="setup">
+    <h1>مساعد يشتغل على جهازك</h1>
+    <p class="lede">النموذج بينزل مرة وحدة وبينحفظ على الجهاز. بعدها بيشتغل بدون إنترنت وبدون أي API.</p>
+
+    <div class="opt" data-model="Llama-3.2-1B-Instruct-q4f16_1-MLC" data-sel="1">
+      <div class="top">
+        <span class="mname">Llama 3.2 — 1B</span>
+        <span class="msize">~880 MB</span>
+      </div>
+      <div class="mdesc">الخيار المُوصى به لجهازك. أسرع، وذاكرة أقل. إنجليزي جيد لحجمه.</div>
+    </div>
+
+    <div class="opt" data-model="Llama-3.2-3B-Instruct-q4f16_1-MLC">
+      <div class="top">
+        <span class="mname">Llama 3.2 — 3B</span>
+        <span class="msize">~2.3 GB</span>
+      </div>
+      <div class="mdesc">أذكى بوضوح، بس أبطأ بكثير على Mali-G57. جرّبه بعد ما تتأكد إن 1B شغّال.</div>
+    </div>
+
+    <div class="note">
+      أول تحميل بدّه إنترنت جيد و<b>وقت</b> — من 3 لـ 10 دقايق. لا تسكّر التطبيق أثناء التحميل. بعدها بيفتح فوراً بدون نت.
+    </div>
+
+    <button class="primary" id="loadBtn">تحميل النموذج وتشغيله</button>
+
+    <div class="prog" id="prog">
+      <div class="bar"><i id="barFill"></i></div>
+      <div class="txt" id="progTxt">…</div>
+    </div>
+  </section>
+
+  <!-- chat -->
+  <section class="thread" id="thread" hidden>
+    <div class="empty" id="empty">اكتب رسالتك بالإنجليزي للحصول على أفضل نتيجة.</div>
+  </section>
 </div>
 
-<button id="copyBtn">نسخ التقرير</button>
-<button class="ghost" id="againBtn">إعادة الفحص</button>
-<div class="copied" id="copied"></div>
-
-<footer>لا يُرسل أي شيء لأي خادم. كل الفحوصات تجري على جهازك.</footer>
-
+<div class="composer" id="composer" hidden>
+  <textarea id="input" rows="1" placeholder="Type a message…" dir="ltr"></textarea>
+  <button class="send" id="send" aria-label="إرسال">&#10148;</button>
 </div>
 
-<script>
-const checksEl = document.getElementById('checks');
-const verdictEl = document.getElementById('verdict');
-const vTitle = document.getElementById('vtitle');
-const vText  = document.getElementById('vtext');
-let report = [];
-let delay = 0;
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet">
+  <h2>الإعدادات</h2>
+  <p class="hint">تعديلاتك بتنحفظ على الجهاز.</p>
 
-function add(status, title, value, note){
-  report.push({status,title,value,note});
-  const row = document.createElement('div');
-  row.className = 'row';
-  row.style.animationDelay = delay + 'ms';
-  delay += 45;
-  const labels = {pass:'PASS', warn:'LIMITED', fail:'FAIL', info:'INFO'};
-  row.innerHTML =
-    '<span class="chip '+status+'">'+labels[status]+'</span>' +
-    '<div class="rowbody">' +
-      '<div class="rowtitle"></div>' +
-      (value ? '<div class="rowval"></div>' : '') +
-      (note ? '<div class="rownote"></div>' : '') +
-    '</div>';
-  row.querySelector('.rowtitle').textContent = title;
-  if (value) row.querySelector('.rowval').textContent = value;
-  if (note)  row.querySelector('.rownote').textContent = note;
-  checksEl.appendChild(row);
+  <div class="field">
+    <label for="sysp">التعليمات (System Prompt)</label>
+    <div class="sub">هون بتحدد شخصية المساعد وطريقة رده. التغيير بيطبّق على المحادثة الجاية.</div>
+    <textarea id="sysp" dir="ltr"></textarea>
+  </div>
+
+  <div class="field">
+    <label for="temp">درجة العشوائية</label>
+    <div class="sub">قليلة = ردود ثابتة ودقيقة. عالية = ردود متنوعة وأكثر إبداعاً.</div>
+    <input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.7">
+    <div class="rowline"><span>0 — precise</span><span id="tempVal">0.70</span><span>1.5 — wild</span></div>
+  </div>
+
+  <button class="ghostbtn" id="clearChat">مسح المحادثة</button>
+  <button class="ghostbtn danger" id="wipeModel">حذف النموذج من الجهاز</button>
+  <button class="primary" id="closeSheet">تم</button>
+</div>
+
+<script type="module">
+import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+
+const $ = id => document.getElementById(id);
+const DEFAULT_SYS = "You are a helpful, direct assistant running locally on the user's phone. Answer concisely and honestly. If you don't know something, say so.";
+
+let engine = null, modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+let history = [], generating = false;
+
+/* ---------- persistence (degrades gracefully) ---------- */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : v; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+};
+$("sysp").value = store.get("sysp", DEFAULT_SYS);
+$("temp").value = store.get("temp", "0.7");
+$("tempVal").textContent = (+$("temp").value).toFixed(2);
+
+/* ---------- model picker ---------- */
+document.querySelectorAll(".opt").forEach(el => {
+  el.addEventListener("click", () => {
+    if (engine) return;
+    document.querySelectorAll(".opt").forEach(o => o.removeAttribute("data-sel"));
+    el.setAttribute("data-sel", "1");
+    modelId = el.dataset.model;
+  });
+});
+
+/* ---------- status strip ---------- */
+function status(state, name, metric){
+  const p = $("pulse");
+  p.className = "pulse" + (state ? " " + state : "");
+  if (name !== undefined) $("dName").textContent = name;
+  if (metric !== undefined) $("dMetric").textContent = metric;
 }
 
-function setVerdict(state, title, text, rec){
-  verdictEl.dataset.state = state;
-  vTitle.textContent = title;
-  vText.textContent = text;
-  const old = verdictEl.querySelector('.rec');
-  if (old) old.remove();
-  if (rec){
-    const d = document.createElement('div');
-    d.className = 'rec';
-    d.innerHTML = rec;
-    verdictEl.appendChild(d);
+/* ---------- load ---------- */
+$("loadBtn").addEventListener("click", async () => {
+  $("loadBtn").disabled = true;
+  $("prog").classList.add("on");
+  status("busy", "LOADING", "");
+
+  const onProgress = r => {
+    const pct = Math.round((r.progress || 0) * 100);
+    $("barFill").style.width = pct + "%";
+    $("progTxt").textContent = r.text || "";
+    $("dMetric").textContent = pct + "%";
+  };
+
+  try {
+    engine = await createEngine(modelId, onProgress);
+    $("setup").hidden = true;
+    $("thread").hidden = false;
+    $("composer").hidden = false;
+    $("gear").hidden = false;
+    status("ready", modelId.replace("-Instruct-q4f16_1-MLC", "").toUpperCase(), "on-device");
+    $("input").focus();
+  } catch (err) {
+    status("err", "FAILED", "");
+    $("progTxt").textContent = "خطأ: " + (err.message || err);
+    $("loadBtn").disabled = false;
+    $("loadBtn").textContent = "إعادة المحاولة";
+  }
+});
+
+async function createEngine(id, onProgress){
+  // prefer a worker so generation doesn't freeze the UI
+  const src = `import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+new webllm.WebWorkerMLCEngineHandler();`;
+  try {
+    const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+    const worker = new Worker(url, { type: "module" });
+    return await webllm.CreateWebWorkerMLCEngine(worker, id, { initProgressCallback: onProgress });
+  } catch (e) {
+    return await webllm.CreateMLCEngine(id, { initProgressCallback: onProgress });
   }
 }
 
-function fmtBytes(n){
-  if (!n && n !== 0) return '—';
-  const gb = n / (1024**3);
-  if (gb >= 1) return gb.toFixed(2) + ' GB';
-  return (n / (1024**2)).toFixed(0) + ' MB';
+/* ---------- chat ---------- */
+function bubble(role, text){
+  $("empty").remove?.();
+  const el = document.createElement("div");
+  el.className = "msg " + (role === "user" ? "user" : "ai");
+  el.innerHTML = '<div class="who"></div><div class="body"></div><div class="foot"></div>';
+  el.querySelector(".who").textContent = role === "user" ? "YOU" : "LOCAL MODEL";
+  el.querySelector(".body").textContent = text || "";
+  $("thread").appendChild(el);
+  scroll();
+  return el;
 }
+function scroll(){ $("stage").scrollTop = $("stage").scrollHeight; }
 
-// --- WASM SIMD feature test ---
-function wasmSimd(){
-  try{
-    return WebAssembly.validate(new Uint8Array([
-      0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,
-      10,10,1,8,0,65,0,253,15,253,98,11
-    ]));
-  }catch(e){ return false; }
-}
+async function send(){
+  const text = $("input").value.trim();
+  if (!text || !engine || generating) return;
 
-async function run(){
-  checksEl.innerHTML = '';
-  report = [];
-  delay = 0;
-  let gpuOk = false, f16 = false, maxBuf = 0, maxStorage = 0;
+  $("input").value = "";
+  $("input").style.height = "auto";
+  bubble("user", text);
+  history.push({ role: "user", content: text });
 
-  // 1. environment
-  const ua = navigator.userAgent;
-  const isWebView = /\bwv\b/.test(ua) || /Version\/[\d.]+.*Chrome/.test(ua);
-  add('info', 'البيئة',
-      isWebView ? 'Android WebView' : 'Browser (Chrome/other)',
-      isWebView ? 'ممتاز — هاي نفس بيئة تطبيق Median.' : 'تحذير: هاي نتيجة المتصفح، مش WebView. أعد الفحص من داخل التطبيق.');
+  generating = true;
+  $("send").classList.add("stop");
+  $("send").innerHTML = "&#9632;";
+  status("busy", undefined, "thinking…");
 
-  add('info', 'User Agent', ua);
+  const el = bubble("ai", "");
+  const body = el.querySelector(".body");
+  const foot = el.querySelector(".foot");
+  const caret = document.createElement("span");
+  caret.className = "caret";
+  body.appendChild(caret);
 
-  // 2. secure context
-  add(window.isSecureContext ? 'pass' : 'fail', 'اتصال آمن (HTTPS)',
-      window.isSecureContext ? 'secure context' : 'insecure',
-      window.isSecureContext ? null : 'WebGPU ما بيشتغل بدون HTTPS. GitHub Pages بيوفره تلقائياً.');
+  let reply = "";
+  try {
+    const messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history];
+    const stream = await engine.chat.completions.create({
+      messages,
+      stream: true,
+      stream_options: { include_usage: true },
+      temperature: parseFloat($("temp").value),
+      max_tokens: 1024
+    });
 
-  // 3. device memory
-  const dm = navigator.deviceMemory;
-  add(dm ? (dm >= 4 ? 'pass' : 'warn') : 'info', 'ذاكرة متاحة للمتصفح',
-      dm ? dm + ' GB (مُبلَّغ عنها)' : 'غير متاح',
-      'المتصفحات بتحدد هاي القيمة بحد أقصى 8، حتى لو الجهاز عنده أكثر.');
-
-  // 4. storage quota
-  try{
-    const est = await navigator.storage.estimate();
-    const q = est.quota || 0;
-    add(q > 1.5*(1024**3) ? 'pass' : (q > 600*(1024**2) ? 'warn' : 'fail'),
-        'مساحة التخزين المسموحة',
-        'المتاح: ' + fmtBytes(q) + '  •  المستخدم: ' + fmtBytes(est.usage||0),
-        'النموذج بينحفظ هون بعد أول تحميل. بدنا 1GB على الأقل لنموذج 1B.');
-  }catch(e){
-    add('warn','مساحة التخزين المسموحة','غير متاح','ما قدرنا نقيسها — مش بالضرورة مشكلة.');
-  }
-
-  // 5. WASM + SIMD
-  add(typeof WebAssembly === 'object' ? 'pass':'fail','WebAssembly',
-      typeof WebAssembly === 'object' ? 'مدعوم':'غير مدعوم');
-  const simd = wasmSimd();
-  add(simd ? 'pass':'warn','WASM SIMD', simd ? 'مدعوم':'غير مدعوم',
-      'مهم للخطة البديلة إذا WebGPU ما زبط.');
-
-  // 6. threads
-  const sab = typeof SharedArrayBuffer !== 'undefined';
-  add(sab ? 'pass':'warn','خيوط متعددة (SharedArrayBuffer)',
-      sab ? 'متاح' : 'غير متاح',
-      sab ? null : 'GitHub Pages ما بيقدر يبعت هيدرز COOP/COEP، فهذا متوقع. بيأثر على سرعة الخطة البديلة فقط، مش على WebGPU.');
-  add('info','عدد أنوية المعالج', (navigator.hardwareConcurrency||'—') + ' cores');
-
-  // 7. WebGPU
-  if (!('gpu' in navigator)){
-    add('fail','WebGPU','navigator.gpu غير موجود',
-        'هاي البيئة ما بتدعم WebGPU إطلاقاً.');
-  } else {
-    add('pass','WebGPU API','navigator.gpu موجود');
-    try{
-      const adapter = await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
-      if (!adapter){
-        add('fail','بطاقة الرسوميات (Adapter)','requestAdapter أرجع null',
-            'الـ API موجود بس الجهاز/البيئة رفضت تعطي وصول للـ GPU.');
-      } else {
-        let info = {};
-        try{
-          info = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {});
-        }catch(e){}
-        const desc = [info.vendor, info.architecture, info.device, info.description]
-                      .filter(Boolean).join(' / ') || 'تفاصيل غير معلنة';
-        add('pass','بطاقة الرسوميات (Adapter)', desc);
-
-        f16 = adapter.features && adapter.features.has('shader-f16');
-        add(f16 ? 'pass':'warn','دعم shader-f16', f16 ? 'مدعوم':'غير مدعوم',
-            f16 ? 'هذا بيضاعف السرعة ويقلل استهلاك الذاكرة.'
-                : 'بدونه النموذج بيشتغل أبطأ وبيستهلك ذاكرة أكثر. اختر نموذج أصغر.');
-
-        maxBuf = adapter.limits.maxBufferSize || 0;
-        maxStorage = adapter.limits.maxStorageBufferBindingSize || 0;
-        add(maxBuf >= 1024**3 ? 'pass' : (maxBuf >= 256*(1024**2) ? 'warn':'fail'),
-            'أقصى حجم Buffer', fmtBytes(maxBuf),
-            'هذا بيحدد أكبر نموذج ممكن تحمّله.');
-        add(maxStorage >= 512*(1024**2) ? 'pass' : 'warn',
-            'أقصى Storage Buffer Binding', fmtBytes(maxStorage));
-
-        // real compute test
-        try{
-          const device = await adapter.requestDevice(
-            f16 ? {requiredFeatures:['shader-f16']} : {}
-          );
-          const src = `
-            @group(0) @binding(0) var<storage, read_write> data: array<f32>;
-            @compute @workgroup_size(64)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-              if (id.x < arrayLength(&data)) { data[id.x] = data[id.x] * 2.0 + 1.0; }
-            }`;
-          const module = device.createShaderModule({code:src});
-          const N = 256;
-          const input = new Float32Array(N).map((_,i)=>i);
-          const buf = device.createBuffer({size:input.byteLength,
-            usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST});
-          device.queue.writeBuffer(buf,0,input);
-          const pipeline = device.createComputePipeline({layout:'auto',compute:{module,entryPoint:'main'}});
-          const bind = device.createBindGroup({layout:pipeline.getBindGroupLayout(0),
-            entries:[{binding:0,resource:{buffer:buf}}]});
-          const read = device.createBuffer({size:input.byteLength,
-            usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
-          const enc = device.createCommandEncoder();
-          const pass = enc.beginComputePass();
-          pass.setPipeline(pipeline); pass.setBindGroup(0,bind);
-          pass.dispatchWorkgroups(Math.ceil(N/64)); pass.end();
-          enc.copyBufferToBuffer(buf,0,read,0,input.byteLength);
-          const t0 = performance.now();
-          device.queue.submit([enc.finish()]);
-          await read.mapAsync(GPUMapMode.READ);
-          const t1 = performance.now();
-          const out = new Float32Array(read.getMappedRange().slice(0));
-          read.unmap();
-          const correct = out[10] === 21 && out[100] === 201;
-          gpuOk = correct;
-          add(correct ? 'pass':'fail','تشغيل فعلي على الـ GPU',
-              correct ? ('نجح — الوقت: ' + (t1-t0).toFixed(1) + ' ms')
-                      : 'نتيجة الحساب غلط',
-              correct ? 'الـ GPU نفّذ shader حقيقي وأرجع نتيجة صحيحة. هاي أهم نتيجة بالفحص.'
-                      : 'الـ GPU استجاب بس النتيجة غلط — مشكلة في التعريفات.');
-        }catch(e){
-          add('fail','تشغيل فعلي على الـ GPU','خطأ: ' + (e.message||e),
-              'الـ adapter موجود بس ما قدرنا نشغّل shader.');
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (delta) {
+        reply += delta;
+        body.textContent = reply;
+        body.appendChild(caret);
+        scroll();
+      }
+      if (chunk.usage) {
+        const s = chunk.usage.extra?.decode_tokens_per_s;
+        if (s) {
+          foot.textContent = s.toFixed(1) + " tok/s";
+          status(undefined, undefined, s.toFixed(1) + " tok/s");
         }
       }
-    }catch(e){
-      add('fail','WebGPU','خطأ: ' + (e.message||e));
     }
-  }
-
-  // verdict
-  if (gpuOk && f16 && maxBuf >= 1024**3){
-    setVerdict('pass','جهازك جاهز',
-      'WebGPU شغّال فعلياً داخل هاي البيئة، مع دعم f16 وذاكرة كافية.',
-      'الحجم المناسب: نموذج بين <b>1B</b> و<b>3B</b> مضغوط (q4f16). حجم التحميل تقريباً 700MB–1.8GB.');
-  } else if (gpuOk){
-    setVerdict('warn','شغّال، بس بحدود',
-      'WebGPU اشتغل فعلياً، لكن في قيود بتحدد حجم النموذج.',
-      'الحجم المناسب: نموذج <b>0.5B</b> إلى <b>1B</b> مضغوط (q4f32). ابدأ بالأصغر وجرّب تكبّر.');
-  } else if ('gpu' in navigator){
-    setVerdict('fail','WebGPU مش شغّال هون',
-      'الـ API موجود بس ما نفّذ shader فعلياً في هاي البيئة.',
-      'البدائل: تفعيل WebGPU من إعدادات Median، أو الاعتماد على <b>WASM</b> (أبطأ بكثير)، أو الخيار الأول — قاعدة معرفة محلية.');
-  } else {
-    setVerdict('fail','WebGPU غير مدعوم',
-      'هاي البيئة ما فيها WebGPU إطلاقاً.',
-      'يبقى أمامك: <b>WASM</b> مع نموذج صغير جداً (بطيء)، أو قاعدة معرفة محلية بدون نموذج.');
+    history.push({ role: "assistant", content: reply });
+  } catch (err) {
+    body.textContent = reply || "";
+    foot.textContent = "توقف: " + (err.message || err);
+  } finally {
+    caret.remove();
+    if (!body.textContent) body.textContent = "(لا يوجد رد)";
+    generating = false;
+    $("send").classList.remove("stop");
+    $("send").innerHTML = "&#10148;";
+    status("ready");
+    scroll();
   }
 }
 
-document.getElementById('copyBtn').addEventListener('click', async ()=>{
-  const lines = report.map(r =>
-    '['+r.status.toUpperCase()+'] '+r.title + (r.value ? ' — '+r.value : '')
-  );
-  const txt = 'تقرير فحص القدرة\n' + new Date().toISOString() + '\n\n' +
-              'الخلاصة: ' + vTitle.textContent + '\n\n' + lines.join('\n');
-  const done = document.getElementById('copied');
-  try{
-    await navigator.clipboard.writeText(txt);
-    done.textContent = 'تم النسخ — الصقه في المحادثة.';
-  }catch(e){
-    const ta = document.createElement('textarea');
-    ta.value = txt; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); ta.remove();
-    done.textContent = 'تم النسخ — الصقه في المحادثة.';
-  }
-  setTimeout(()=>{done.textContent='';}, 4000);
+$("send").addEventListener("click", () => {
+  if (generating) { engine?.interruptGenerate?.(); return; }
+  send();
+});
+$("input").addEventListener("input", e => {
+  e.target.style.height = "auto";
+  e.target.style.height = Math.min(e.target.scrollHeight, 130) + "px";
+});
+$("input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
 });
 
-document.getElementById('againBtn').addEventListener('click', ()=>{
-  setVerdict('','جاري الفحص…','ثواني قليلة.');
-  run();
+/* ---------- settings ---------- */
+function sheet(open){
+  $("scrim").classList.toggle("on", open);
+  $("sheet").classList.toggle("on", open);
+}
+$("gear").addEventListener("click", () => sheet(true));
+$("scrim").addEventListener("click", () => sheet(false));
+$("closeSheet").addEventListener("click", () => {
+  store.set("sysp", $("sysp").value);
+  store.set("temp", $("temp").value);
+  sheet(false);
 });
-
-run();
+$("temp").addEventListener("input", e => {
+  $("tempVal").textContent = (+e.target.value).toFixed(2);
+});
+$("clearChat").addEventListener("click", () => {
+  history = [];
+  $("thread").innerHTML = '<div class="empty" id="empty">تم مسح المحادثة.</div>';
+  sheet(false);
+});
+$("wipeModel").addEventListener("click", async () => {
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+    if (indexedDB.databases) {
+      const dbs = await indexedDB.databases();
+      dbs.forEach(d => d.name && indexedDB.deleteDatabase(d.name));
+    }
+  } catch (e) {}
+  location.reload();
+});
 </script>
 </body>
 </html>
