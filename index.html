@@ -262,7 +262,14 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
 import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
 const $ = id => document.getElementById(id);
-const DEFAULT_SYS = "You are a helpful, direct assistant running locally on the user's phone. Answer concisely and honestly. If you don't know something, say so.";
+const DEFAULT_SYS = `You are a small offline assistant running on the user's phone. You have no internet access and your knowledge stops in 2024.
+
+Rules:
+- Reply in English only.
+- Be brief: 1-3 sentences unless the user asks for detail. Never pad.
+- If asked about news, prices, sports, or anything after 2024, say you cannot know that.
+- If asked about a specific person, place, business, or school you are not certain about, say you don't know. Never invent facts.
+- You are good at: rewriting text, summarizing, explaining concepts, brainstorming, and simple code. Lean on those.`;
 
 let engine = null, modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 let history = [], generating = false;
@@ -324,16 +331,11 @@ $("loadBtn").addEventListener("click", async () => {
 });
 
 async function createEngine(id, onProgress){
-  // Try a worker first (keeps the UI responsive). Android WebView often refuses
-  // a module worker that imports a remote URL — and it fails SILENTLY, so we
-  // race it against a timeout and fall back to the main thread.
-  const src = `import * as webllm from "https://esm.run/@mlc-ai/web-llm";
-new webllm.WebWorkerMLCEngineHandler();`;
-
+  // Same-origin worker file — WebView rejects blob: module workers that import
+  // a remote URL, so worker.js has to live next to this page on GitHub Pages.
   let worker = null;
   try {
-    const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
-    worker = new Worker(url, { type: "module" });
+    worker = new Worker("worker.js", { type: "module" });
   } catch (e) {
     worker = null;
   }
@@ -405,7 +407,7 @@ async function send(){
       stream: true,
       stream_options: { include_usage: true },
       temperature: parseFloat($("temp").value),
-      max_tokens: 1024
+      max_tokens: 400
     });
 
     for await (const chunk of stream) {
@@ -472,6 +474,16 @@ $("clearChat").addEventListener("click", () => {
   $("thread").innerHTML = '<div class="empty" id="empty">تم مسح المحادثة.</div>';
   sheet(false);
 });
+/* ---------- auto-load if the model is already on the device ---------- */
+(async () => {
+  try {
+    if (await webllm.hasModelInCache(modelId)) {
+      $("loadBtn").textContent = "تشغيل النموذج المحفوظ";
+      $("loadBtn").click();
+    }
+  } catch (e) { /* not cached, or API unavailable — show the normal screen */ }
+})();
+
 $("wipeModel").addEventListener("click", async () => {
   try {
     const keys = await caches.keys();
