@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>فحص قدرة الجهاز — تشغيل نموذج محلي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDF0F3;
+  --card:#FFFFFF;
+  --ink:#141E28;
+  --ink-soft:#5A6B7A;
+  --line:#D3DAE1;
+  --signal:#1B44E8;
+  --pass:#0C6E48;
+  --pass-bg:#E2F3EB;
+  --warn:#8A5A05;
+  --warn-bg:#FBF0DC;
+  --fail:#A82820;
+  --fail-bg:#FAE7E5;
+  --sans:"IBM Plex Sans Arabic",system-ui,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:15px;
+  line-height:1.6;
+  padding:20px 16px 56px;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:640px;margin:0 auto}
+
+header{margin-bottom:22px}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.14em;
+  color:var(--ink-soft);
+  text-transform:uppercase;
+  direction:ltr;
+  text-align:right;
+  margin-bottom:8px;
+}
+h1{font-size:25px;font-weight:700;line-height:1.3;margin:0 0 6px}
+.sub{color:var(--ink-soft);font-size:14px;margin:0}
+
+/* verdict */
+.verdict{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:20px;
+  margin:22px 0 26px;
+  position:relative;
+  overflow:hidden;
+}
+.verdict::before{
+  content:"";position:absolute;inset-inline-start:0;top:0;bottom:0;width:5px;
+  background:var(--ink-soft);transition:background .3s;
+}
+.verdict[data-state="pass"]::before{background:var(--pass)}
+.verdict[data-state="warn"]::before{background:var(--warn)}
+.verdict[data-state="fail"]::before{background:var(--fail)}
+.verdict h2{font-size:19px;margin:0 0 8px;font-weight:700}
+.verdict p{margin:0;color:var(--ink-soft);font-size:14px}
+.verdict .rec{
+  margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);
+  font-size:14px;color:var(--ink);
+}
+.rec b{font-family:var(--mono);font-weight:600}
+
+/* checks */
+.group-label{
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  color:var(--ink-soft);text-transform:uppercase;
+  margin:0 0 10px;direction:ltr;text-align:right;
+}
+.checks{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  overflow:hidden;
+  margin-bottom:26px;
+}
+.row{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:14px 16px;
+  border-bottom:1px solid var(--line);
+  opacity:0;transform:translateY(4px);
+  animation:in .28s ease forwards;
+}
+.row:last-child{border-bottom:0}
+@keyframes in{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.row{animation:none;opacity:1;transform:none}}
+.chip{
+  flex:0 0 auto;font-family:var(--mono);font-size:10px;font-weight:600;
+  padding:3px 7px;border-radius:5px;letter-spacing:.06em;
+  direction:ltr;margin-top:3px;min-width:52px;text-align:center;
+}
+.chip.pass{background:var(--pass-bg);color:var(--pass)}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.chip.fail{background:var(--fail-bg);color:var(--fail)}
+.chip.info{background:#E7EBF0;color:var(--ink-soft)}
+.rowbody{flex:1;min-width:0}
+.rowtitle{font-weight:600;font-size:14px}
+.rowval{
+  font-family:var(--mono);font-size:12px;color:var(--ink-soft);
+  direction:ltr;text-align:right;word-break:break-all;margin-top:2px;
+}
+.rownote{font-size:13px;color:var(--ink-soft);margin-top:4px}
+
+.loading{padding:22px 16px;color:var(--ink-soft);font-size:14px}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--signal);margin-inline-start:6px;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.2}}
+
+button{
+  width:100%;font-family:var(--sans);font-size:15px;font-weight:600;
+  padding:14px;border-radius:11px;border:1px solid var(--signal);
+  background:var(--signal);color:#fff;cursor:pointer;
+}
+button:active{transform:translateY(1px)}
+button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
+button.ghost{background:transparent;color:var(--signal);margin-top:10px}
+.copied{text-align:center;font-size:13px;color:var(--pass);margin-top:10px;min-height:20px}
+footer{margin-top:24px;font-size:12px;color:var(--ink-soft);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">LOCAL MODEL / CAPABILITY CHECK</div>
+  <h1>هل يقدر جهازك يشغّل نموذج AI محلي؟</h1>
+  <p class="sub">فحص يشتغل داخل نفس البيئة اللي رح يشتغل فيها التطبيق. افتح هاي الصفحة من داخل تطبيق Median، مش من المتصفح.</p>
+</header>
+
+<div class="verdict" id="verdict" data-state="">
+  <h2 id="vtitle">جاري الفحص…</h2>
+  <p id="vtext">ثواني قليلة.</p>
+</div>
+
+<p class="group-label">RESULTS</p>
+<div class="checks" id="checks">
+  <div class="loading">تشغيل الفحوصات<span class="dot"></span></div>
+</div>
+
+<button id="copyBtn">نسخ التقرير</button>
+<button class="ghost" id="againBtn">إعادة الفحص</button>
+<div class="copied" id="copied"></div>
+
+<footer>لا يُرسل أي شيء لأي خادم. كل الفحوصات تجري على جهازك.</footer>
+
+</div>
+
+<script>
+const checksEl = document.getElementById('checks');
+const verdictEl = document.getElementById('verdict');
+const vTitle = document.getElementById('vtitle');
+const vText  = document.getElementById('vtext');
+let report = [];
+let delay = 0;
+
+function add(status, title, value, note){
+  report.push({status,title,value,note});
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.animationDelay = delay + 'ms';
+  delay += 45;
+  const labels = {pass:'PASS', warn:'LIMITED', fail:'FAIL', info:'INFO'};
+  row.innerHTML =
+    '<span class="chip '+status+'">'+labels[status]+'</span>' +
+    '<div class="rowbody">' +
+      '<div class="rowtitle"></div>' +
+      (value ? '<div class="rowval"></div>' : '') +
+      (note ? '<div class="rownote"></div>' : '') +
+    '</div>';
+  row.querySelector('.rowtitle').textContent = title;
+  if (value) row.querySelector('.rowval').textContent = value;
+  if (note)  row.querySelector('.rownote').textContent = note;
+  checksEl.appendChild(row);
+}
+
+function setVerdict(state, title, text, rec){
+  verdictEl.dataset.state = state;
+  vTitle.textContent = title;
+  vText.textContent = text;
+  const old = verdictEl.querySelector('.rec');
+  if (old) old.remove();
+  if (rec){
+    const d = document.createElement('div');
+    d.className = 'rec';
+    d.innerHTML = rec;
+    verdictEl.appendChild(d);
+  }
+}
+
+function fmtBytes(n){
+  if (!n && n !== 0) return '—';
+  const gb = n / (1024**3);
+  if (gb >= 1) return gb.toFixed(2) + ' GB';
+  return (n / (1024**2)).toFixed(0) + ' MB';
+}
+
+// --- WASM SIMD feature test ---
+function wasmSimd(){
+  try{
+    return WebAssembly.validate(new Uint8Array([
+      0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,
+      10,10,1,8,0,65,0,253,15,253,98,11
+    ]));
+  }catch(e){ return false; }
+}
+
+async function run(){
+  checksEl.innerHTML = '';
+  report = [];
+  delay = 0;
+  let gpuOk = false, f16 = false, maxBuf = 0, maxStorage = 0;
+
+  // 1. environment
+  const ua = navigator.userAgent;
+  const isWebView = /\bwv\b/.test(ua) || /Version\/[\d.]+.*Chrome/.test(ua);
+  add('info', 'البيئة',
+      isWebView ? 'Android WebView' : 'Browser (Chrome/other)',
+      isWebView ? 'ممتاز — هاي نفس بيئة تطبيق Median.' : 'تحذير: هاي نتيجة المتصفح، مش WebView. أعد الفحص من داخل التطبيق.');
+
+  add('info', 'User Agent', ua);
+
+  // 2. secure context
+  add(window.isSecureContext ? 'pass' : 'fail', 'اتصال آمن (HTTPS)',
+      window.isSecureContext ? 'secure context' : 'insecure',
+      window.isSecureContext ? null : 'WebGPU ما بيشتغل بدون HTTPS. GitHub Pages بيوفره تلقائياً.');
+
+  // 3. device memory
+  const dm = navigator.deviceMemory;
+  add(dm ? (dm >= 4 ? 'pass' : 'warn') : 'info', 'ذاكرة متاحة للمتصفح',
+      dm ? dm + ' GB (مُبلَّغ عنها)' : 'غير متاح',
+      'المتصفحات بتحدد هاي القيمة بحد أقصى 8، حتى لو الجهاز عنده أكثر.');
+
+  // 4. storage quota
+  try{
+    const est = await navigator.storage.estimate();
+    const q = est.quota || 0;
+    add(q > 1.5*(1024**3) ? 'pass' : (q > 600*(1024**2) ? 'warn' : 'fail'),
+        'مساحة التخزين المسموحة',
+        'المتاح: ' + fmtBytes(q) + '  •  المستخدم: ' + fmtBytes(est.usage||0),
+        'النموذج بينحفظ هون بعد أول تحميل. بدنا 1GB على الأقل لنموذج 1B.');
+  }catch(e){
+    add('warn','مساحة التخزين المسموحة','غير متاح','ما قدرنا نقيسها — مش بالضرورة مشكلة.');
+  }
+
+  // 5. WASM + SIMD
+  add(typeof WebAssembly === 'object' ? 'pass':'fail','WebAssembly',
+      typeof WebAssembly === 'object' ? 'مدعوم':'غير مدعوم');
+  const simd = wasmSimd();
+  add(simd ? 'pass':'warn','WASM SIMD', simd ? 'مدعوم':'غير مدعوم',
+      'مهم للخطة البديلة إذا WebGPU ما زبط.');
+
+  // 6. threads
+  const sab = typeof SharedArrayBuffer !== 'undefined';
+  add(sab ? 'pass':'warn','خيوط متعددة (SharedArrayBuffer)',
+      sab ? 'متاح' : 'غير متاح',
+      sab ? null : 'GitHub Pages ما بيقدر يبعت هيدرز COOP/COEP، فهذا متوقع. بيأثر على سرعة الخطة البديلة فقط، مش على WebGPU.');
+  add('info','عدد أنوية المعالج', (navigator.hardwareConcurrency||'—') + ' cores');
+
+  // 7. WebGPU
+  if (!('gpu' in navigator)){
+    add('fail','WebGPU','navigator.gpu غير موجود',
+        'هاي البيئة ما بتدعم WebGPU إطلاقاً.');
+  } else {
+    add('pass','WebGPU API','navigator.gpu موجود');
+    try{
+      const adapter = await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
+      if (!adapter){
+        add('fail','بطاقة الرسوميات (Adapter)','requestAdapter أرجع null',
+            'الـ API موجود بس الجهاز/البيئة رفضت تعطي وصول للـ GPU.');
+      } else {
+        let info = {};
+        try{
+          info = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {});
+        }catch(e){}
+        const desc = [info.vendor, info.architecture, info.device, info.description]
+                      .filter(Boolean).join(' / ') || 'تفاصيل غير معلنة';
+        add('pass','بطاقة الرسوميات (Adapter)', desc);
+
+        f16 = adapter.features && adapter.features.has('shader-f16');
+        add(f16 ? 'pass':'warn','دعم shader-f16', f16 ? 'مدعوم':'غير مدعوم',
+            f16 ? 'هذا بيضاعف السرعة ويقلل استهلاك الذاكرة.'
+                : 'بدونه النموذج بيشتغل أبطأ وبيستهلك ذاكرة أكثر. اختر نموذج أصغر.');
+
+        maxBuf = adapter.limits.maxBufferSize || 0;
+        maxStorage = adapter.limits.maxStorageBufferBindingSize || 0;
+        add(maxBuf >= 1024**3 ? 'pass' : (maxBuf >= 256*(1024**2) ? 'warn':'fail'),
+            'أقصى حجم Buffer', fmtBytes(maxBuf),
+            'هذا بيحدد أكبر نموذج ممكن تحمّله.');
+        add(maxStorage >= 512*(1024**2) ? 'pass' : 'warn',
+            'أقصى Storage Buffer Binding', fmtBytes(maxStorage));
+
+        // real compute test
+        try{
+          const device = await adapter.requestDevice(
+            f16 ? {requiredFeatures:['shader-f16']} : {}
+          );
+          const src = `
+            @group(0) @binding(0) var<storage, read_write> data: array<f32>;
+            @compute @workgroup_size(64)
+            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+              if (id.x < arrayLength(&data)) { data[id.x] = data[id.x] * 2.0 + 1.0; }
+            }`;
+          const module = device.createShaderModule({code:src});
+          const N = 256;
+          const input = new Float32Array(N).map((_,i)=>i);
+          const buf = device.createBuffer({size:input.byteLength,
+            usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST});
+          device.queue.writeBuffer(buf,0,input);
+          const pipeline = device.createComputePipeline({layout:'auto',compute:{module,entryPoint:'main'}});
+          const bind = device.createBindGroup({layout:pipeline.getBindGroupLayout(0),
+            entries:[{binding:0,resource:{buffer:buf}}]});
+          const read = device.createBuffer({size:input.byteLength,
+            usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+          const enc = device.createCommandEncoder();
+          const pass = enc.beginComputePass();
+          pass.setPipeline(pipeline); pass.setBindGroup(0,bind);
+          pass.dispatchWorkgroups(Math.ceil(N/64)); pass.end();
+          enc.copyBufferToBuffer(buf,0,read,0,input.byteLength);
+          const t0 = performance.now();
+          device.queue.submit([enc.finish()]);
+          await read.mapAsync(GPUMapMode.READ);
+          const t1 = performance.now();
+          const out = new Float32Array(read.getMappedRange().slice(0));
+          read.unmap();
+          const correct = out[10] === 21 && out[100] === 201;
+          gpuOk = correct;
+          add(correct ? 'pass':'fail','تشغيل فعلي على الـ GPU',
+              correct ? ('نجح — الوقت: ' + (t1-t0).toFixed(1) + ' ms')
+                      : 'نتيجة الحساب غلط',
+              correct ? 'الـ GPU نفّذ shader حقيقي وأرجع نتيجة صحيحة. هاي أهم نتيجة بالفحص.'
+                      : 'الـ GPU استجاب بس النتيجة غلط — مشكلة في التعريفات.');
+        }catch(e){
+          add('fail','تشغيل فعلي على الـ GPU','خطأ: ' + (e.message||e),
+              'الـ adapter موجود بس ما قدرنا نشغّل shader.');
+        }
+      }
+    }catch(e){
+      add('fail','WebGPU','خطأ: ' + (e.message||e));
+    }
+  }
+
+  // verdict
+  if (gpuOk && f16 && maxBuf >= 1024**3){
+    setVerdict('pass','جهازك جاهز',
+      'WebGPU شغّال فعلياً داخل هاي البيئة، مع دعم f16 وذاكرة كافية.',
+      'الحجم المناسب: نموذج بين <b>1B</b> و<b>3B</b> مضغوط (q4f16). حجم التحميل تقريباً 700MB–1.8GB.');
+  } else if (gpuOk){
+    setVerdict('warn','شغّال، بس بحدود',
+      'WebGPU اشتغل فعلياً، لكن في قيود بتحدد حجم النموذج.',
+      'الحجم المناسب: نموذج <b>0.5B</b> إلى <b>1B</b> مضغوط (q4f32). ابدأ بالأصغر وجرّب تكبّر.');
+  } else if ('gpu' in navigator){
+    setVerdict('fail','WebGPU مش شغّال هون',
+      'الـ API موجود بس ما نفّذ shader فعلياً في هاي البيئة.',
+      'البدائل: تفعيل WebGPU من إعدادات Median، أو الاعتماد على <b>WASM</b> (أبطأ بكثير)، أو الخيار الأول — قاعدة معرفة محلية.');
+  } else {
+    setVerdict('fail','WebGPU غير مدعوم',
+      'هاي البيئة ما فيها WebGPU إطلاقاً.',
+      'يبقى أمامك: <b>WASM</b> مع نموذج صغير جداً (بطيء)، أو قاعدة معرفة محلية بدون نموذج.');
+  }
+}
+
+document.getElementById('copyBtn').addEventListener('click', async ()=>{
+  const lines = report.map(r =>
+    '['+r.status.toUpperCase()+'] '+r.title + (r.value ? ' — '+r.value : '')
+  );
+  const txt = 'تقرير فحص القدرة\n' + new Date().toISOString() + '\n\n' +
+              'الخلاصة: ' + vTitle.textContent + '\n\n' + lines.join('\n');
+  const done = document.getElementById('copied');
+  try{
+    await navigator.clipboard.writeText(txt);
+    done.textContent = 'تم النسخ — الصقه في المحادثة.';
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = txt; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+    done.textContent = 'تم النسخ — الصقه في المحادثة.';
+  }
+  setTimeout(()=>{done.textContent='';}, 4000);
+});
+
+document.getElementById('againBtn').addEventListener('click', ()=>{
+  setVerdict('','جاري الفحص…','ثواني قليلة.');
+  run();
+});
+
+run();
+</script>
+</body>
+</html>
