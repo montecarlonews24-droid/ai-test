@@ -177,6 +177,30 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   margin-bottom:9px;
 }
 .ghostbtn.danger{color:var(--fail);border-color:#F0C9C5}
+.ghostbtn.slim{padding:10px;font-size:13.5px;margin-bottom:7px}
+
+/* ---------- docs (RAG) ---------- */
+.field input[type=text]{
+  width:100%;font-family:var(--sans);font-size:14px;
+  border:1px solid var(--line);border-radius:10px;padding:10px 11px;
+  background:var(--paper);color:var(--ink);margin-bottom:7px;
+}
+.toggle{display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+.toggle input{width:17px;height:17px;accent-color:var(--signal)}
+.ragstat{font-family:var(--mono);font-size:11px;color:var(--ink-soft);direction:ltr}
+.doclist{margin-top:9px;display:flex;flex-direction:column;gap:6px}
+.docrow{
+  display:flex;align-items:center;gap:9px;
+  border:1px solid var(--line);border-radius:10px;
+  padding:9px 11px;background:var(--paper);
+}
+.docrow .dn{flex:1;font-size:13.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.docrow .dt{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);direction:ltr;flex:0 0 auto}
+.docrow .dx{
+  background:none;border:0;color:var(--fail);font-size:16px;
+  cursor:pointer;padding:0 3px;line-height:1;flex:0 0 auto;
+}
+.docempty{font-size:12.5px;color:var(--ink-soft);padding:3px 1px}
 </style>
 </head>
 <body>
@@ -277,6 +301,24 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
     <div class="rowline"><span>0 — precise</span><span id="tempVal">0.70</span><span>1.5 — wild</span></div>
   </div>
 
+  <div class="field">
+    <label>مستنداتي</label>
+    <div class="sub">النموذج بيقرأ من هالنصوص بدل ما يخمّن من ذاكرته. لما يلاقي شي متعلّق بسؤالك، بيجاوب منه فقط.</div>
+
+    <div class="rowline" style="margin-bottom:10px;align-items:center">
+      <label class="toggle"><input type="checkbox" id="ragOn"> تفعيل المستندات</label>
+      <span class="ragstat" id="ragStat">0 docs</span>
+    </div>
+
+    <input type="text" id="docName" placeholder="اسم المصدر (اختياري)">
+    <textarea id="docText" dir="auto" placeholder="الصق النص هنا…" style="min-height:80px;font-family:var(--sans);font-size:14px"></textarea>
+    <button class="ghostbtn slim" id="docAdd">إضافة النص</button>
+    <input type="file" id="docFile" accept=".txt,.md,.json,text/plain" hidden>
+    <button class="ghostbtn slim" id="docPick">إضافة ملف (txt / md / json)</button>
+
+    <div class="doclist" id="docList"></div>
+  </div>
+
   <button class="ghostbtn" id="clearChat">مسح المحادثة</button>
   <button class="ghostbtn danger" id="wipeModel">حذف النموذج من الجهاز</button>
   <button class="primary" id="closeSheet">تم</button>
@@ -284,6 +326,7 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
 
 <script type="module">
 import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+import { RAG, ragPrompt, RAG_SYSTEM_PROMPT } from "./rag.js";
 
 const $ = id => document.getElementById(id);
 const DEFAULT_SYS = `You are a small offline assistant running on the user's phone. You have no internet access and your knowledge stops in 2024.
@@ -297,6 +340,7 @@ Rules:
 
 let engine = null, modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 let history = [], generating = false;
+let rag = null;
 
 /* ---------- persistence (degrades gracefully) ---------- */
 const store = {
@@ -306,6 +350,71 @@ const store = {
 $("sysp").value = store.get("sysp", DEFAULT_SYS);
 $("temp").value = store.get("temp", "0.7");
 $("tempVal").textContent = (+$("temp").value).toFixed(2);
+$("ragOn").checked = store.get("ragEnabled", "1") === "1";
+
+/* ---------- RAG: documents ---------- */
+(async () => {
+  try {
+    rag = await new RAG().init();
+    window.rag = rag;              // for console testing: rag.buildContext("...")
+    renderDocs();
+  } catch (e) {
+    $("docList").innerHTML = '<div class="docempty">تعذّر فتح مخزن المستندات: ' + (e.message || e) + '</div>';
+  }
+})();
+
+function renderDocs(){
+  if (!rag) return;
+  const docs = rag.list();
+  $("ragStat").textContent = docs.length
+    ? docs.length + " docs · " + rag.chunkCount + " chunks"
+    : "0 docs";
+  const list = $("docList");
+  list.innerHTML = "";
+  if (!docs.length) {
+    list.innerHTML = '<div class="docempty">ما في مستندات بعد. الصق نصاً فوق وأضفه.</div>';
+    return;
+  }
+  for (const d of docs) {
+    const row = document.createElement("div");
+    row.className = "docrow";
+    row.innerHTML = '<span class="dn"></span><span class="dt"></span><button class="dx" aria-label="حذف">&times;</button>';
+    row.querySelector(".dn").textContent = d.name;
+    row.querySelector(".dt").textContent = "~" + d.tokens + " tok";
+    row.querySelector(".dx").addEventListener("click", async () => {
+      await rag.remove(d.id);
+      renderDocs();
+    });
+    list.appendChild(row);
+  }
+}
+
+$("docAdd").addEventListener("click", async () => {
+  const text = $("docText").value.trim();
+  if (!rag || !text) return;
+  const name = $("docName").value.trim() || ("نص " + (rag.list().length + 1));
+  try {
+    await rag.addText(name, text);
+    $("docText").value = "";
+    $("docName").value = "";
+    renderDocs();
+  } catch (e) { alert("فشل: " + (e.message || e)); }
+});
+
+$("docPick").addEventListener("click", () => $("docFile").click());
+$("docFile").addEventListener("change", async e => {
+  const f = e.target.files?.[0];
+  if (!f || !rag) return;
+  try {
+    await rag.addFile(f);
+    renderDocs();
+  } catch (err) { alert("فشل قراءة الملف: " + (err.message || err)); }
+  e.target.value = "";
+});
+
+$("ragOn").addEventListener("change", e => {
+  store.set("ragEnabled", e.target.checked ? "1" : "0");
+});
 
 // restore the last model the user picked
 modelId = store.get("modelId", modelId);
@@ -433,7 +542,28 @@ async function send(){
     caret.className = "caret";
     body.appendChild(caret);
 
-    const messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history];
+    // ---- RAG: look in the user's documents before asking the model ----
+    let ctx = null, srcLabel = "";
+    if (rag && $("ragOn").checked && rag.list().length) {
+      status("busy", undefined, "searching docs…");
+      try { ctx = await rag.buildContext(text); } catch (e) { ctx = null; }
+    }
+
+    let messages;
+    if (ctx && ctx.context) {
+      // keep history short when context is attached — prefill is expensive here
+      messages = [
+        { role: "system", content: RAG_SYSTEM_PROMPT },
+        ...history.slice(-5, -1),
+        { role: "user", content: ragPrompt(ctx.context, text) }
+      ];
+      srcLabel = "من: " + ctx.sources.join("، ") + " · " + ctx.tokens + " tok";
+      foot.textContent = srcLabel;
+    } else {
+      messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history];
+    }
+    status("busy", undefined, "thinking…");
+
     const stream = await engine.chat.completions.create({
       messages,
       stream: true,
@@ -453,7 +583,7 @@ async function send(){
       if (chunk.usage) {
         const s = chunk.usage.extra?.decode_tokens_per_s;
         if (s) {
-          foot.textContent = s.toFixed(1) + " tok/s";
+          foot.textContent = (srcLabel ? srcLabel + " · " : "") + s.toFixed(1) + " tok/s";
           status(undefined, undefined, s.toFixed(1) + " tok/s");
         }
       }
@@ -522,7 +652,8 @@ $("wipeModel").addEventListener("click", async () => {
     await Promise.all(keys.map(k => caches.delete(k)));
     if (indexedDB.databases) {
       const dbs = await indexedDB.databases();
-      dbs.forEach(d => d.name && indexedDB.deleteDatabase(d.name));
+      // keep "rag-db" — that's the user's own documents, not the model
+      dbs.forEach(d => d.name && d.name !== "rag-db" && indexedDB.deleteDatabase(d.name));
     }
   } catch (e) {}
   location.reload();
