@@ -185,6 +185,8 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   border:1px solid var(--line);border-radius:10px;padding:10px 11px;
   background:var(--paper);color:var(--ink);margin-bottom:7px;
 }
+.msg .retry{background:none;border:0;color:var(--signal);font-family:var(--sans);font-size:12.5px;padding:6px 0 0;cursor:pointer}
+.msg .retry:disabled{color:var(--ink-soft)}
 .smart{background:var(--card);border:1.5px solid var(--signal);border-radius:14px;padding:16px;margin:0 0 18px}
 .smart h2{margin:0 0 4px;font-size:17px}
 .smart p{margin:0 0 12px;font-size:13px;color:var(--ink-soft)}
@@ -397,7 +399,8 @@ const DEFAULT_SYS = `أنت مساعد ذكي يعمل على هاتف المس�
 - أجب بالعربية الفصحى المبسطة دائماً. إذا كتب المستخدم بلغة أخرى فأجب بلغته.
 - لا تخلط لغتين في الجملة الواحدة.
 - كن مختصراً ومباشراً: من جملة إلى ثلاث جمل، إلا إذا طُلب التفصيل.
-- إذا لم تكن متأكداً من معلومة (شخص، مكان، رقم، تاريخ) فقل: لا أعرف. لا تخترع أبداً.
+- أجب عن كل سؤال بأفضل ما لديك. إذا لم تكن متأكداً فاذكر ذلك في جملة قصيرة ثم أعطِ أفضل تقدير، ولا تخترع أرقاماً أو مصادر.
+- لا تعظ ولا تكرر التحذيرات. أجب مباشرة عن الأسئلة العادية.
 - للأخبار والأسعار والأحداث بعد 2024 قل إنك لا تستطيع معرفتها.
 - إذا كان السؤال غامضاً فاسأل سؤالاً توضيحياً واحداً فقط.
 - أنت جيد في: إعادة صياغة النصوص، التلخيص، شرح المفاهيم، العصف الذهني، والبرمجة البسيطة.
@@ -415,7 +418,7 @@ const store = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : v; }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
 };
-$("sysp").value = store.get("sysp_v2", DEFAULT_SYS);
+$("sysp").value = store.get("sysp_v3", DEFAULT_SYS);
 $("temp").value = store.get("temp2", "0.3");
 $("tempVal").textContent = (+$("temp").value).toFixed(2);
 $("ragOn").checked = store.get("ragEnabled", "1") === "1";
@@ -428,7 +431,8 @@ const CLOUD_SYS = `أنت مساعد ذكي وخبير. أجب بلغة المس
 القواعد:
 - ابدأ بالجواب مباشرة، ثم اشرح عند الحاجة.
 - للمسائل المعقدة فكّر خطوة بخطوة قبل أن تصل إلى النتيجة.
-- إذا لم تكن متأكداً فقل ذلك بوضوح، ولا تخترع معلومات أو مصادر.
+- إذا لم تكن متأكداً فاذكر ذلك بوضوح ثم أعطِ أفضل إجابة ممكنة، ولا تخترع معلومات أو مصادر.
+- أجب مباشرة عن الأسئلة العادية دون مواعظ أو تحذيرات غير لازمة. وإذا كان الموضوع حساساً فأجب بالجزء الآمن والمفيد منه بدل الرفض الكامل.
 - إذا كان السؤال غامضاً فاسأل سؤالاً توضيحياً واحداً فقط.
 - اكتب نصاً عادياً بدون تنسيق Markdown: لا نجوم ولا علامات # ولا جداول. للقوائم استخدم الشرطة - في أول السطر.
 - اجعل الفقرات قصيرة لتناسب شاشة الهاتف.`;
@@ -513,6 +517,9 @@ async function cloudStream(messages, onDelta, signal){
     let msg = t; try { msg = JSON.parse(t).error?.message || t; } catch (e) {}
     throw new Error(res.status + ": " + String(msg).slice(0, 300));
   }
+  let got = false, finish = "";
+  const emit = t => { if (t) { got = true; onDelta(t); } };
+  const refusal = m => { const er = new Error(m); er.refusal = true; return er; };
   const reader = res.body.getReader(), dec = new TextDecoder();
   let buf = "";
   for (;;) {
@@ -528,17 +535,27 @@ async function cloudStream(messages, onDelta, signal){
       if (!d || d === "[DONE]") continue;
       let j; try { j = JSON.parse(d); } catch (e) { continue; }
       if (prov === "gemini") {
-        if (j.promptFeedback?.blockReason) throw new Error("رُفض الطلب: " + j.promptFeedback.blockReason);
-        for (const part of (j.candidates?.[0]?.content?.parts || [])) {
-          if (part.text && !part.thought) onDelta(part.text);
+        if (j.promptFeedback?.blockReason) throw refusal("رُفض الطلب: " + j.promptFeedback.blockReason);
+        const cand = j.candidates?.[0];
+        if (cand?.finishReason && cand.finishReason !== "STOP") finish = cand.finishReason;
+        for (const part of (cand?.content?.parts || [])) {
+          if (part.text && !part.thought) emit(part.text);
         }
       } else if (j.type === "content_block_delta" && j.delta?.type === "text_delta") {
-        onDelta(j.delta.text);
+        emit(j.delta.text);
+      } else if (j.type === "message_delta" && j.delta?.stop_reason === "refusal") {
+        throw refusal("رفض النموذج الرد");
       } else if (j.type === "error") {
         throw new Error(j.error?.message || "error");
       }
     }
   }
+  if (!got) throw refusal("لم يصل رد" + (finish ? " (" + finish + ")" : ""));
+}
+
+function isFallbackError(e){
+  const m = String(e.message || e);
+  return !!e.refusal || /Failed to fetch|NetworkError|Load failed/i.test(m) || /^(429|5\d\d)/.test(m);
 }
 
 function cloudError(err){
@@ -719,6 +736,63 @@ function scroll(){ $("stage").scrollTop = $("stage").scrollHeight; }
 
 const clean = r => r.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
 
+async function localStream(messages, onDelta, onSpeed){
+  const stream = await engine.chat.completions.create({
+    messages,
+    stream: true,
+    stream_options: { include_usage: true },
+    temperature: parseFloat($("temp").value),
+    top_p: 0.9,
+    repetition_penalty: 1.1,
+    max_tokens: 600,
+    ...(modelId.startsWith("Qwen3") ? { extra_body: { enable_thinking: false } } : {})
+  });
+  for await (const chunk of stream) {
+    const delta = chunk.choices?.[0]?.delta?.content;
+    if (delta) onDelta(delta);
+    const sp = chunk.usage?.extra?.decode_tokens_per_s;
+    if (sp) onSpeed?.(sp);
+  }
+}
+
+// In smart mode the local model is loaded only on demand, and only if it is already on the device.
+async function ensureLocal(){
+  if (engine) return true;
+  try {
+    const W = await getWebllm();
+    if (!(await W.hasModelInCache(modelId))) return false;
+    status("busy", undefined, "loading local…");
+    engine = await createEngine(modelId, r => { $("dMetric").textContent = Math.round((r.progress || 0) * 100) + "%"; });
+    return true;
+  } catch (e) { return false; }
+}
+
+const NO_LOCAL = "لا يوجد نموذج محلي محمّل على الجهاز. للتحويل إليه: الإعدادات ← أوقف الوضع الذكي ← حمّل نموذجاً محلياً مرة واحدة.";
+
+async function retryLocal(body, foot, localMsgs, histEntry, btn){
+  if (generating) return;
+  if (!(await ensureLocal())) { foot.textContent = NO_LOCAL; status("ready", "SMART · " + cloudModel(), "cloud"); return; }
+  generating = true; btn.disabled = true;
+  $("send").classList.add("stop"); $("send").innerHTML = "&#9632;";
+  status("busy", undefined, "local…");
+  const caret = document.createElement("span"); caret.className = "caret";
+  let r = ""; body.textContent = ""; body.appendChild(caret);
+  try {
+    await localStream(localMsgs, d => { r += d; body.textContent = clean(r); body.appendChild(caret); scroll(); },
+      sp => { foot.textContent = "رد محلي · " + sp.toFixed(1) + " tok/s"; });
+    histEntry.content = clean(r);
+    foot.textContent = "رد محلي";
+  } catch (e) { foot.textContent = "توقف: " + (e.message || e); }
+  finally {
+    caret.remove();
+    if (!body.textContent) body.textContent = "(لا يوجد رد)";
+    generating = false; btn.disabled = false;
+    $("send").classList.remove("stop"); $("send").innerHTML = "&#10148;";
+    status("ready", "SMART · " + cloudModel(), "cloud");
+    scroll();
+  }
+}
+
 async function send(){
   const text = $("input").value.trim();
   if (!text || (!engine && !cloudMode) || generating) return;
@@ -749,64 +823,66 @@ async function send(){
       status("busy", undefined, "searching docs…");
       try { ctx = await rag.buildContext(text); } catch (e) { ctx = null; }
     }
-
-    let messages;
-    if (ctx && ctx.context) {
-      // keep history short when context is attached — prefill is expensive here
-      messages = [
-        { role: "system", content: RAG_SYSTEM_PROMPT },
-        ...history.slice(-5, -1),
-        { role: "user", content: ragPrompt(ctx.context, text) }
-      ];
+    const useDocs = !!(ctx && ctx.context);
+    const ragMsgs = () => [
+      { role: "system", content: RAG_SYSTEM_PROMPT },
+      ...history.slice(-5, -1),
+      { role: "user", content: ragPrompt(ctx.context, text) }
+    ];
+    // local-model messages (also used for the fallback and the manual "try local" button);
+    // history is captured now, before this turn's answer is appended
+    const localMsgs = useDocs ? ragMsgs()
+      : [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history.slice(-8)];
+    const messages = useDocs ? localMsgs
+      : (cloudMode ? [{ role: "system", content: store.get("sysp_cloud_v2", CLOUD_SYS) || CLOUD_SYS }, ...history.slice(-30)] : localMsgs);
+    if (useDocs) {
       srcLabel = "من: " + ctx.sources.join("، ") + " · " + ctx.tokens + " tok";
       foot.textContent = srcLabel;
-    } else {
-      messages = [{ role: "system", content: cloudMode ? (store.get("sysp_cloud", CLOUD_SYS) || CLOUD_SYS) : ($("sysp").value || DEFAULT_SYS) }, ...history.slice(cloudMode ? -30 : -8)];
     }
     status("busy", undefined, "thinking…");
 
-    if (cloudMode) {
-      cloudAbort = new AbortController();
-      await cloudStream(messages, d => {
-        reply += d;
-        body.textContent = clean(reply);
-        body.appendChild(caret);
-        scroll();
-      }, cloudAbort.signal);
-      foot.textContent = (srcLabel ? srcLabel + " · " : "") + cloudModel();
-    } else {
-      const stream = await engine.chat.completions.create({
-        messages,
-        stream: true,
-        stream_options: { include_usage: true },
-        temperature: parseFloat($("temp").value),
-        top_p: 0.9,
-        repetition_penalty: 1.1,
-        max_tokens: 600,
-        ...(modelId.startsWith("Qwen3") ? { extra_body: { enable_thinking: false } } : {})
+    const show = d => { reply += d; body.textContent = clean(reply); body.appendChild(caret); scroll(); };
+    const runLocal = async () => {
+      reply = ""; body.textContent = ""; body.appendChild(caret);
+      await localStream(localMsgs, show, sp => {
+        foot.textContent = (srcLabel ? srcLabel + " · " : "") + sp.toFixed(1) + " tok/s";
+        status(undefined, undefined, sp.toFixed(1) + " tok/s");
       });
+    };
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices?.[0]?.delta?.content;
-        if (delta) {
-          reply += delta;
-          body.textContent = clean(reply);
-          body.appendChild(caret);
-          scroll();
-        }
-        if (chunk.usage) {
-          const s = chunk.usage.extra?.decode_tokens_per_s;
-          if (s) {
-            foot.textContent = (srcLabel ? srcLabel + " · " : "") + s.toFixed(1) + " tok/s";
-            status(undefined, undefined, s.toFixed(1) + " tok/s");
-          }
-        }
+    let viaCloud = false;
+    if (cloudMode) {
+      try {
+        cloudAbort = new AbortController();
+        await cloudStream(messages, show, cloudAbort.signal);
+        viaCloud = true;
+        foot.textContent = (srcLabel ? srcLabel + " · " : "") + cloudModel();
+      } catch (e) {
+        if (e.name === "AbortError" || !isFallbackError(e)) throw e;
+        foot.textContent = "تعذّر الرد السحابي (" + cloudError(e) + ") — جاري التحويل للنموذج المحلي…";
+        if (!(await ensureLocal())) throw Object.assign(new Error(cloudError(e) + "\n" + NO_LOCAL), { plain: true });
+        status("busy", undefined, "local…");
+        await runLocal();
+        foot.textContent = "رد محلي (تعذّر الرد السحابي)";
+        status("ready", "SMART · " + cloudModel(), "cloud");
       }
+    } else {
+      await runLocal();
     }
-    if (reply) history.push({ role: "assistant", content: clean(reply) });
+
+    const histEntry = { role: "assistant", content: clean(reply) };
+    if (reply) history.push(histEntry);
+
+    if (viaCloud && reply) {
+      const btn = document.createElement("button");
+      btn.className = "retry";
+      btn.textContent = "↻ جرّب بالنموذج المحلي";
+      btn.addEventListener("click", () => retryLocal(body, foot, localMsgs, histEntry, btn));
+      el.appendChild(btn);
+    }
   } catch (err) {
     if (body) body.textContent = reply || "";
-    if (foot) foot.textContent = err.name === "AbortError" ? "أُوقف" : "توقف: " + (cloudMode ? cloudError(err) : (err.message || err));
+    if (foot) foot.textContent = err.name === "AbortError" ? "أُوقف" : "توقف: " + (err.plain ? err.message : (cloudMode ? cloudError(err) : (err.message || err)));
     else bubble("ai", "خطأ: " + (err.message || err));
   } finally {
     caret?.remove();
@@ -841,18 +917,18 @@ $("gear").addEventListener("click", () => {
   $("sProv").value = cloudProv();
   $("sKey").value = store.get("cloudKey", "");
   $("sModel").value = cloudModel();
-  $("syspCloud").value = store.get("sysp_cloud", CLOUD_SYS);
+  $("syspCloud").value = store.get("sysp_cloud_v2", CLOUD_SYS);
   sheet(true);
 });
 $("scrim").addEventListener("click", () => sheet(false));
 $("closeSheet").addEventListener("click", () => {
-  store.set("sysp_v2", $("sysp").value);
+  store.set("sysp_v3", $("sysp").value);
   store.set("temp2", $("temp").value);
   const prov = $("sProv").value, key = $("sKey").value.trim();
   store.set("cloudProvider", prov);
   store.set("cloudKey", key);
   store.set("cloudModel", $("sModel").value.trim() || DEF_MODEL[prov]);
-  store.set("sysp_cloud", $("syspCloud").value);
+  store.set("sysp_cloud_v2", $("syspCloud").value);
   const want = $("cloudOn").checked && !!key;
   store.set("cloudOn", want ? "1" : "0");
   sheet(false);
