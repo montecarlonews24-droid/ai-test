@@ -593,21 +593,23 @@ async function send(){
     let ctx = null, srcLabel = "";
     if (rag && $("ragOn").checked && rag.list().length) {
       status("busy", undefined, "searching docs…");
-      try { ctx = await rag.buildContext(text); } catch (e) { ctx = null; }
+      // a very short follow-up ("وماذا عن الثاني؟") has no keywords of its own: borrow the previous question
+      const prevUser = [...history].reverse().slice(1).find(m => m.role === "user");
+      const query = (text.split(/\s+/).length < 4 && prevUser) ? prevUser.content + " " + text : text;
+      try { ctx = await rag.buildContext(query); } catch (e) { ctx = null; }
     }
 
     let messages;
     if (ctx && ctx.context) {
-      // keep history short when context is attached — prefill is expensive here
+      // no earlier turns here: a small model copies its previous answer when it sees it in the history
       messages = [
         { role: "system", content: RAG_SYSTEM_PROMPT },
-        ...history.slice(-5, -1),
         { role: "user", content: ragPrompt(ctx.context, text) }
       ];
       srcLabel = "من: " + ctx.sources.join("، ") + " · " + ctx.tokens + " tok";
       foot.textContent = srcLabel;
     } else {
-      messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history.slice(-8)];
+      messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history.slice(-6)];
     }
     status("busy", undefined, "thinking…");
 
