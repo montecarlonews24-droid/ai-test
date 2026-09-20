@@ -220,7 +220,7 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
     <h1>مساعد يشتغل على جهازك</h1>
     <p class="lede">النموذج بينزل مرة وحدة وبينحفظ على الجهاز. بعدها بيشتغل بدون إنترنت وبدون أي API.</p>
 
-    <div class="opt" data-model="Llama-3.2-1B-Instruct-q4f16_1-MLC" data-sel="1">
+    <div class="opt" data-model="Llama-3.2-1B-Instruct-q4f16_1-MLC">
       <div class="top">
         <span class="mname">Llama 3.2 — 1B</span>
         <span class="msize">~880 MB</span>
@@ -228,12 +228,28 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
       <div class="mdesc">الأسرع. منطقه ضعيف، بس ردوده مقبولة للأسئلة البسيطة.</div>
     </div>
 
-    <div class="opt" data-model="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">
+    <div class="opt" data-model="Qwen2.5-1.5B-Instruct-q4f16_1-MLC" data-sel="1">
       <div class="top">
         <span class="mname">Qwen 2.5 — 1.5B</span>
         <span class="msize">~1.6 GB</span>
       </div>
-      <div class="mdesc">أقوى في المنطق والبرمجة من Llama 1B، وأبطأ منه بحوالي الثلث. جرّبه أول.</div>
+      <div class="mdesc">الأفضل في العربية بين الخيارات الصغيرة. ابدأ فيه.</div>
+    </div>
+
+    <div class="opt" data-model="Qwen3-1.7B-q4f16_1-MLC">
+      <div class="top">
+        <span class="mname">Qwen 3 — 1.7B (تجريبي)</span>
+        <span class="msize">~2 GB</span>
+      </div>
+      <div class="mdesc">أحدث من Qwen 2.5 وأقوى في الفهم واتباع التعليمات. جرّبه إذا كانت سرعته مقبولة.</div>
+    </div>
+
+    <div class="opt" data-model="gemma-2-2b-it-q4f16_1-MLC">
+      <div class="top">
+        <span class="mname">Gemma 2 — 2B (تجريبي)</span>
+        <span class="msize">~1.9 GB</span>
+      </div>
+      <div class="mdesc">من Google. جيد في الصياغة والعربية، وأبطأ قليلاً.</div>
     </div>
 
     <div class="opt" data-model="Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC">
@@ -291,14 +307,14 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   <div class="field">
     <label for="sysp">التعليمات (System Prompt)</label>
     <div class="sub">هون بتحدد شخصية المساعد وطريقة رده. التغيير بيطبّق على المحادثة الجاية.</div>
-    <textarea id="sysp" dir="ltr"></textarea>
+    <textarea id="sysp" dir="auto"></textarea>
   </div>
 
   <div class="field">
     <label for="temp">درجة العشوائية</label>
     <div class="sub">قليلة = ردود ثابتة ودقيقة. عالية = ردود متنوعة وأكثر إبداعاً.</div>
-    <input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.7">
-    <div class="rowline"><span>0 — precise</span><span id="tempVal">0.70</span><span>1.5 — wild</span></div>
+    <input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.3">
+    <div class="rowline"><span>0 — precise</span><span id="tempVal">0.30</span><span>1.5 — wild</span></div>
   </div>
 
   <div class="field">
@@ -329,16 +345,22 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 import { RAG, ragPrompt, RAG_SYSTEM_PROMPT } from "./rag.js";
 
 const $ = id => document.getElementById(id);
-const DEFAULT_SYS = `You are a small offline assistant running on the user's phone. You have no internet access and your knowledge stops in 2024.
+const DEFAULT_SYS = `أنت مساعد ذكي يعمل على هاتف المستخدم بدون إنترنت. معلوماتك تتوقف عند سنة 2024.
 
-Rules:
-- Reply in English only.
-- Be brief: 1-3 sentences unless the user asks for detail. Never pad.
-- If asked about news, prices, sports, or anything after 2024, say you cannot know that.
-- If asked about a specific person, place, business, or school you are not certain about, say you don't know. Never invent facts.
-- You are good at: rewriting text, summarizing, explaining concepts, brainstorming, and simple code. Lean on those.`;
+القواعد:
+- أجب بالعربية الفصحى المبسطة دائماً. إذا كتب المستخدم بلغة أخرى فأجب بلغته.
+- لا تخلط لغتين في الجملة الواحدة.
+- كن مختصراً ومباشراً: من جملة إلى ثلاث جمل، إلا إذا طُلب التفصيل.
+- إذا لم تكن متأكداً من معلومة (شخص، مكان، رقم، تاريخ) فقل: لا أعرف. لا تخترع أبداً.
+- للأخبار والأسعار والأحداث بعد 2024 قل إنك لا تستطيع معرفتها.
+- إذا كان السؤال غامضاً فاسأل سؤالاً توضيحياً واحداً فقط.
+- أنت جيد في: إعادة صياغة النصوص، التلخيص، شرح المفاهيم، العصف الذهني، والبرمجة البسيطة.
 
-let engine = null, modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+مثال:
+المستخدم: ما هو البناء الضوئي؟
+المساعد: عملية تصنع بها النباتات غذاءها من ضوء الشمس والماء وثاني أكسيد الكربون، وينتج عنها الأكسجين.`;
+
+let engine = null, modelId = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 let history = [], generating = false;
 let rag = null;
 
@@ -347,8 +369,8 @@ const store = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : v; }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
 };
-$("sysp").value = store.get("sysp", DEFAULT_SYS);
-$("temp").value = store.get("temp", "0.7");
+$("sysp").value = store.get("sysp_v2", DEFAULT_SYS);
+$("temp").value = store.get("temp2", "0.3");
 $("tempVal").textContent = (+$("temp").value).toFixed(2);
 $("ragOn").checked = store.get("ragEnabled", "1") === "1";
 
@@ -461,7 +483,7 @@ $("loadBtn").addEventListener("click", async () => {
     $("thread").hidden = false;
     $("composer").hidden = false;
     $("gear").hidden = false;
-    status("ready", modelId.replace("-Instruct-q4f16_1-MLC", "").toUpperCase(), "on-device");
+    status("ready", modelId.replace(/-Instruct/i, "").replace(/-q4f\d+_1-MLC/, "").toUpperCase(), "on-device");
     $("input").focus();
   } catch (err) {
     status("err", "FAILED", "");
@@ -518,6 +540,8 @@ function bubble(role, text){
 }
 function scroll(){ $("stage").scrollTop = $("stage").scrollHeight; }
 
+const clean = r => r.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
+
 async function send(){
   const text = $("input").value.trim();
   if (!text || !engine || generating) return;
@@ -560,7 +584,7 @@ async function send(){
       srcLabel = "من: " + ctx.sources.join("، ") + " · " + ctx.tokens + " tok";
       foot.textContent = srcLabel;
     } else {
-      messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history];
+      messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history.slice(-8)];
     }
     status("busy", undefined, "thinking…");
 
@@ -569,14 +593,17 @@ async function send(){
       stream: true,
       stream_options: { include_usage: true },
       temperature: parseFloat($("temp").value),
-      max_tokens: 400
+      top_p: 0.9,
+      repetition_penalty: 1.1,
+      max_tokens: 600,
+      ...(modelId.startsWith("Qwen3") ? { extra_body: { enable_thinking: false } } : {})
     });
 
     for await (const chunk of stream) {
       const delta = chunk.choices?.[0]?.delta?.content;
       if (delta) {
         reply += delta;
-        body.textContent = reply;
+        body.textContent = clean(reply);
         body.appendChild(caret);
         scroll();
       }
@@ -588,7 +615,7 @@ async function send(){
         }
       }
     }
-    if (reply) history.push({ role: "assistant", content: reply });
+    if (reply) history.push({ role: "assistant", content: clean(reply) });
   } catch (err) {
     if (body) body.textContent = reply || "";
     if (foot) foot.textContent = "توقف: " + (err.message || err);
@@ -624,8 +651,8 @@ function sheet(open){
 $("gear").addEventListener("click", () => sheet(true));
 $("scrim").addEventListener("click", () => sheet(false));
 $("closeSheet").addEventListener("click", () => {
-  store.set("sysp", $("sysp").value);
-  store.set("temp", $("temp").value);
+  store.set("sysp_v2", $("sysp").value);
+  store.set("temp2", $("temp").value);
   sheet(false);
 });
 $("temp").addEventListener("input", e => {
