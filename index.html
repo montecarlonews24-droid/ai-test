@@ -376,12 +376,29 @@ $("temp").value = store.get("temp2", "0.3");
 $("tempVal").textContent = (+$("temp").value).toFixed(2);
 $("ragOn").checked = store.get("ragEnabled", "1") === "1";
 
+/* ---------- built-in mini-encyclopedia: knowledge.json in the same folder ---------- */
+const KB_VERSION = "1";   // bump when knowledge.json changes so it is re-indexed
+async function loadKnowledge(){
+  if (!rag || store.get("kbVersion", "") === KB_VERSION) return;
+  try {
+    const res = await fetch("knowledge.json?v=" + KB_VERSION, { cache: "no-cache" });
+    if (!res.ok) return;
+    const items = await res.json();
+    $("ragStat").textContent = "جاري تحميل الموسوعة…";
+    for (const d of rag.list()) if (d.name.startsWith("[موسوعة]")) await rag.remove(d.id);
+    for (const it of items) await rag.addText(it.name, it.text);
+    store.set("kbVersion", KB_VERSION);
+  } catch (e) { /* offline or file missing: try again next launch */ }
+  renderDocs();
+}
+
 /* ---------- RAG: documents ---------- */
 (async () => {
   try {
     rag = await new RAG().init();
     window.rag = rag;              // for console testing: rag.buildContext("...")
     renderDocs();
+    loadKnowledge();
   } catch (e) {
     $("docList").innerHTML = '<div class="docempty">تعذّر فتح مخزن المستندات: ' + (e.message || e) + '</div>';
   }
