@@ -180,18 +180,11 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
 .ghostbtn.slim{padding:10px;font-size:13.5px;margin-bottom:7px}
 
 /* ---------- docs (RAG) ---------- */
-.field input[type=text],.field input[type=password],.field select{
+.field input[type=text]{
   width:100%;font-family:var(--sans);font-size:14px;
   border:1px solid var(--line);border-radius:10px;padding:10px 11px;
   background:var(--paper);color:var(--ink);margin-bottom:7px;
 }
-.msg .retry{background:none;border:0;color:var(--signal);font-family:var(--sans);font-size:12.5px;padding:6px 0 0;cursor:pointer}
-.msg .retry:disabled{color:var(--ink-soft)}
-.smart{background:var(--card);border:1.5px solid var(--signal);border-radius:14px;padding:16px;margin:0 0 18px}
-.smart h2{margin:0 0 4px;font-size:17px}
-.smart p{margin:0 0 12px;font-size:13px;color:var(--ink-soft)}
-.smart .field{margin-bottom:10px}
-.divider{text-align:center;color:var(--ink-soft);font-size:13px;margin:4px 0 14px}
 .toggle{display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
 .toggle input{width:17px;height:17px;accent-color:var(--signal)}
 .ragstat{font-family:var(--mono);font-size:11px;color:var(--ink-soft);direction:ltr}
@@ -224,31 +217,8 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
 
   <!-- setup -->
   <section class="setup" id="setup">
-    <h1>مساعدك الذكي</h1>
-    <p class="lede">الوضع الذكي هو الأساس: أذكى بكثير، ويبدأ فوراً بدون تحميل. والنموذج المحلي بديل يعمل بدون إنترنت.</p>
-
-    <div class="smart" id="smartCard">
-      <h2>&#9729; الوضع الذكي</h2>
-      <p>يحتاج إنترنت ومفتاح API. المفتاح يُحفظ على هاتفك فقط ولا يُرسل إلا للمزوّد.</p>
-      <div class="field">
-        <label for="cProv">المزوّد</label>
-        <select id="cProv" dir="ltr">
-          <option value="gemini">Google Gemini</option>
-          <option value="anthropic">Anthropic Claude</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="cKey">مفتاح API</label>
-        <input type="password" id="cKey" dir="ltr" placeholder="الصق المفتاح هنا" autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="cModel">اسم النموذج</label>
-        <input type="text" id="cModel" dir="ltr" autocomplete="off">
-      </div>
-      <button class="primary" id="smartStart">ابدأ الوضع الذكي</button>
-    </div>
-
-    <div class="divider">أو شغّل نموذجاً محلياً (ينزل مرة واحدة ثم يعمل بدون إنترنت)</div>
+    <h1>مساعد يشتغل على جهازك</h1>
+    <p class="lede">النموذج بينزل مرة وحدة وبينحفظ على الجهاز. بعدها بيشتغل بدون إنترنت وبدون أي API.</p>
 
     <div class="opt" data-model="Llama-3.2-1B-Instruct-q4f16_1-MLC">
       <div class="top">
@@ -335,21 +305,7 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   <p class="hint">تعديلاتك بتنحفظ على الجهاز.</p>
 
   <div class="field">
-    <label>&#9729; الوضع الذكي (سحابي)</label>
-    <div class="sub">إذا فعّلته يعمل التطبيق عبر المزوّد مباشرة. تغيير الوضع يعيد تشغيل الصفحة.</div>
-    <label class="toggle" style="margin-bottom:9px"><input type="checkbox" id="cloudOn"> استخدام الوضع الذكي</label>
-    <select id="sProv" dir="ltr">
-      <option value="gemini">Google Gemini</option>
-      <option value="anthropic">Anthropic Claude</option>
-    </select>
-    <input type="password" id="sKey" dir="ltr" placeholder="مفتاح API" autocomplete="off">
-    <input type="text" id="sModel" dir="ltr" placeholder="اسم النموذج" autocomplete="off">
-    <div class="sub">تعليمات الوضع الذكي:</div>
-    <textarea id="syspCloud" dir="auto"></textarea>
-  </div>
-
-  <div class="field">
-    <label for="sysp">تعليمات الوضع المحلي (System Prompt)</label>
+    <label for="sysp">التعليمات (System Prompt)</label>
     <div class="sub">هون بتحدد شخصية المساعد وطريقة رده. التغيير بيطبّق على المحادثة الجاية.</div>
     <textarea id="sysp" dir="auto"></textarea>
   </div>
@@ -385,14 +341,10 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
 </div>
 
 <script type="module">
+import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 import { RAG, ragPrompt, RAG_SYSTEM_PROMPT } from "./rag.js";
 
 const $ = id => document.getElementById(id);
-let webllm = null;
-async function getWebllm(){
-  if (!webllm) webllm = await import("https://esm.run/@mlc-ai/web-llm");
-  return webllm;
-}
 const DEFAULT_SYS = `أنت مساعد ذكي يعمل على هاتف المستخدم بدون إنترنت. معلوماتك تتوقف عند سنة 2024.
 
 القواعد:
@@ -414,6 +366,7 @@ let history = [], generating = false;
 let rag = null;
 
 /* ---------- persistence (degrades gracefully) ---------- */
+try { ["cloudOn","cloudKey","cloudProvider","cloudModel","sysp_cloud","sysp_cloud_v2"].forEach(k => localStorage.removeItem(k)); } catch (e) {}
 const store = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : v; }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
@@ -422,150 +375,6 @@ $("sysp").value = store.get("sysp_v3", DEFAULT_SYS);
 $("temp").value = store.get("temp2", "0.3");
 $("tempVal").textContent = (+$("temp").value).toFixed(2);
 $("ragOn").checked = store.get("ragEnabled", "1") === "1";
-
-
-/* ---------- smart (cloud) mode ---------- */
-const DEF_MODEL = { gemini: "gemini-flash-latest", anthropic: "claude-sonnet-5" };
-const CLOUD_SYS = `أنت مساعد ذكي وخبير. أجب بلغة المستخدم (العربية غالباً)، بوضوح ودقة وبعمق يناسب السؤال.
-
-القواعد:
-- ابدأ بالجواب مباشرة، ثم اشرح عند الحاجة.
-- للمسائل المعقدة فكّر خطوة بخطوة قبل أن تصل إلى النتيجة.
-- إذا لم تكن متأكداً فاذكر ذلك بوضوح ثم أعطِ أفضل إجابة ممكنة، ولا تخترع معلومات أو مصادر.
-- أجب مباشرة عن الأسئلة العادية دون مواعظ أو تحذيرات غير لازمة. وإذا كان الموضوع حساساً فأجب بالجزء الآمن والمفيد منه بدل الرفض الكامل.
-- إذا كان السؤال غامضاً فاسأل سؤالاً توضيحياً واحداً فقط.
-- اكتب نصاً عادياً بدون تنسيق Markdown: لا نجوم ولا علامات # ولا جداول. للقوائم استخدم الشرطة - في أول السطر.
-- اجعل الفقرات قصيرة لتناسب شاشة الهاتف.`;
-
-let cloudMode = store.get("cloudOn", "0") === "1" && !!store.get("cloudKey", "");
-let cloudAbort = null;
-
-const cloudProv  = () => store.get("cloudProvider", "gemini");
-const cloudModel = () => store.get("cloudModel", "") || DEF_MODEL[cloudProv()];
-
-function bindProv(selId, modelInputId){
-  $(selId).addEventListener("change", () => {
-    const m = $(modelInputId).value.trim();
-    if (!m || Object.values(DEF_MODEL).includes(m)) $(modelInputId).value = DEF_MODEL[$(selId).value];
-  });
-}
-$("cProv").value = cloudProv();
-$("cKey").value = store.get("cloudKey", "");
-$("cModel").value = cloudModel();
-bindProv("cProv", "cModel");
-bindProv("sProv", "sModel");
-
-function enterCloud(){
-  cloudMode = true;
-  $("setup").hidden = true;
-  $("thread").hidden = false;
-  $("composer").hidden = false;
-  $("gear").hidden = false;
-  status("ready", "SMART · " + cloudModel(), "cloud");
-  $("input").focus();
-}
-
-$("smartStart").addEventListener("click", () => {
-  const key = $("cKey").value.trim();
-  if (!key) { alert("الصق مفتاح API أولاً."); return; }
-  store.set("cloudProvider", $("cProv").value);
-  store.set("cloudKey", key);
-  store.set("cloudModel", $("cModel").value.trim() || DEF_MODEL[$("cProv").value]);
-  store.set("cloudOn", "1");
-  enterCloud();
-});
-
-// Provider APIs want strictly alternating turns that start with the user.
-function normalizeTurns(list){
-  const out = [];
-  for (const m of list) {
-    if (m.role !== "user" && m.role !== "assistant") continue;
-    if (!out.length && m.role === "assistant") continue;
-    const last = out[out.length - 1];
-    if (last && last.role === m.role) last.content += "\n\n" + m.content;
-    else out.push({ role: m.role, content: m.content });
-  }
-  return out;
-}
-
-async function cloudStream(messages, onDelta, signal){
-  const prov = cloudProv(), key = store.get("cloudKey", ""), model = cloudModel();
-  const sys = messages.filter(m => m.role === "system").map(m => m.content).join("\n\n");
-  const turns = normalizeTurns(messages);
-  let url, headers, body;
-  if (prov === "gemini") {
-    url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":streamGenerateContent?alt=sse";
-    headers = { "Content-Type": "application/json", "x-goog-api-key": key };
-    body = {
-      systemInstruction: { parts: [{ text: sys }] },
-      contents: turns.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
-      generationConfig: { maxOutputTokens: 4096 }
-    };
-  } else {
-    url = "https://api.anthropic.com/v1/messages";
-    headers = {
-      "Content-Type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    };
-    body = { model, max_tokens: 4096, system: sys, messages: turns, stream: true };
-  }
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal });
-  if (!res.ok) {
-    let t = ""; try { t = await res.text(); } catch (e) {}
-    let msg = t; try { msg = JSON.parse(t).error?.message || t; } catch (e) {}
-    throw new Error(res.status + ": " + String(msg).slice(0, 300));
-  }
-  let got = false, finish = "";
-  const emit = t => { if (t) { got = true; onDelta(t); } };
-  const refusal = m => { const er = new Error(m); er.refusal = true; return er; };
-  const reader = res.body.getReader(), dec = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, i).trim();
-      buf = buf.slice(i + 1);
-      if (!line.startsWith("data:")) continue;
-      const d = line.slice(5).trim();
-      if (!d || d === "[DONE]") continue;
-      let j; try { j = JSON.parse(d); } catch (e) { continue; }
-      if (prov === "gemini") {
-        if (j.promptFeedback?.blockReason) throw refusal("رُفض الطلب: " + j.promptFeedback.blockReason);
-        const cand = j.candidates?.[0];
-        if (cand?.finishReason && cand.finishReason !== "STOP") finish = cand.finishReason;
-        for (const part of (cand?.content?.parts || [])) {
-          if (part.text && !part.thought) emit(part.text);
-        }
-      } else if (j.type === "content_block_delta" && j.delta?.type === "text_delta") {
-        emit(j.delta.text);
-      } else if (j.type === "message_delta" && j.delta?.stop_reason === "refusal") {
-        throw refusal("رفض النموذج الرد");
-      } else if (j.type === "error") {
-        throw new Error(j.error?.message || "error");
-      }
-    }
-  }
-  if (!got) throw refusal("لم يصل رد" + (finish ? " (" + finish + ")" : ""));
-}
-
-function isFallbackError(e){
-  const m = String(e.message || e);
-  return !!e.refusal || /Failed to fetch|NetworkError|Load failed/i.test(m) || /^(429|5\d\d)/.test(m);
-}
-
-function cloudError(err){
-  const m = String(err.message || err);
-  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "تعذّر الاتصال. تحقق من الإنترنت، أو بدّل للوضع المحلي من الإعدادات.";
-  if (/^(400|401|403)/.test(m) && /key|API_KEY|auth|permission/i.test(m)) return "المفتاح غير صالح أو غير مسموح. تحقق منه في الإعدادات. (" + m + ")";
-  if (/^404/.test(m)) return "اسم النموذج غير صحيح أو غير متاح. غيّره من الإعدادات. (" + m + ")";
-  if (/^429/.test(m)) return "تجاوزت حد الاستخدام المجاني. انتظر قليلاً أو استخدم مفتاحاً آخر. (" + m + ")";
-  return m;
-}
 
 /* ---------- RAG: documents ---------- */
 (async () => {
@@ -689,7 +498,6 @@ $("loadBtn").addEventListener("click", async () => {
 async function createEngine(id, onProgress){
   // Same-origin worker file — WebView rejects blob: module workers that import
   // a remote URL, so worker.js has to live next to this page on GitHub Pages.
-  const W = await getWebllm();
   let worker = null;
   try {
     worker = new Worker("worker.js", { type: "module" });
@@ -702,7 +510,7 @@ async function createEngine(id, onProgress){
     const watch = r => { alive = true; onProgress(r); };
     $("progTxt").textContent = "جاري التجهيز… (worker)";
 
-    const attempt = W.CreateWebWorkerMLCEngine(worker, id, { initProgressCallback: watch });
+    const attempt = webllm.CreateWebWorkerMLCEngine(worker, id, { initProgressCallback: watch });
     const timeout = new Promise((_, rej) =>
       setTimeout(() => { if (!alive) rej(new Error("worker-timeout")); }, 15000)
     );
@@ -717,7 +525,7 @@ async function createEngine(id, onProgress){
 
   // main-thread fallback: slower UI during generation, but works everywhere
   $("progTxt").textContent = "جاري التجهيز…";
-  return await W.CreateMLCEngine(id, { initProgressCallback: onProgress });
+  return await webllm.CreateMLCEngine(id, { initProgressCallback: onProgress });
 }
 
 /* ---------- chat ---------- */
@@ -726,7 +534,7 @@ function bubble(role, text){
   const el = document.createElement("div");
   el.className = "msg " + (role === "user" ? "user" : "ai");
   el.innerHTML = '<div class="who"></div><div class="body"></div><div class="foot"></div>';
-  el.querySelector(".who").textContent = role === "user" ? "YOU" : (cloudMode ? "SMART" : "LOCAL MODEL");
+  el.querySelector(".who").textContent = role === "user" ? "YOU" : "LOCAL MODEL";
   el.querySelector(".body").textContent = text || "";
   $("thread").appendChild(el);
   scroll();
@@ -736,66 +544,9 @@ function scroll(){ $("stage").scrollTop = $("stage").scrollHeight; }
 
 const clean = r => r.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
 
-async function localStream(messages, onDelta, onSpeed){
-  const stream = await engine.chat.completions.create({
-    messages,
-    stream: true,
-    stream_options: { include_usage: true },
-    temperature: parseFloat($("temp").value),
-    top_p: 0.9,
-    repetition_penalty: 1.1,
-    max_tokens: 600,
-    ...(modelId.startsWith("Qwen3") ? { extra_body: { enable_thinking: false } } : {})
-  });
-  for await (const chunk of stream) {
-    const delta = chunk.choices?.[0]?.delta?.content;
-    if (delta) onDelta(delta);
-    const sp = chunk.usage?.extra?.decode_tokens_per_s;
-    if (sp) onSpeed?.(sp);
-  }
-}
-
-// In smart mode the local model is loaded only on demand, and only if it is already on the device.
-async function ensureLocal(){
-  if (engine) return true;
-  try {
-    const W = await getWebllm();
-    if (!(await W.hasModelInCache(modelId))) return false;
-    status("busy", undefined, "loading local…");
-    engine = await createEngine(modelId, r => { $("dMetric").textContent = Math.round((r.progress || 0) * 100) + "%"; });
-    return true;
-  } catch (e) { return false; }
-}
-
-const NO_LOCAL = "لا يوجد نموذج محلي محمّل على الجهاز. للتحويل إليه: الإعدادات ← أوقف الوضع الذكي ← حمّل نموذجاً محلياً مرة واحدة.";
-
-async function retryLocal(body, foot, localMsgs, histEntry, btn){
-  if (generating) return;
-  if (!(await ensureLocal())) { foot.textContent = NO_LOCAL; status("ready", "SMART · " + cloudModel(), "cloud"); return; }
-  generating = true; btn.disabled = true;
-  $("send").classList.add("stop"); $("send").innerHTML = "&#9632;";
-  status("busy", undefined, "local…");
-  const caret = document.createElement("span"); caret.className = "caret";
-  let r = ""; body.textContent = ""; body.appendChild(caret);
-  try {
-    await localStream(localMsgs, d => { r += d; body.textContent = clean(r); body.appendChild(caret); scroll(); },
-      sp => { foot.textContent = "رد محلي · " + sp.toFixed(1) + " tok/s"; });
-    histEntry.content = clean(r);
-    foot.textContent = "رد محلي";
-  } catch (e) { foot.textContent = "توقف: " + (e.message || e); }
-  finally {
-    caret.remove();
-    if (!body.textContent) body.textContent = "(لا يوجد رد)";
-    generating = false; btn.disabled = false;
-    $("send").classList.remove("stop"); $("send").innerHTML = "&#10148;";
-    status("ready", "SMART · " + cloudModel(), "cloud");
-    scroll();
-  }
-}
-
 async function send(){
   const text = $("input").value.trim();
-  if (!text || (!engine && !cloudMode) || generating) return;
+  if (!text || !engine || generating) return;
 
   $("input").value = "";
   $("input").style.height = "auto";
@@ -823,66 +574,53 @@ async function send(){
       status("busy", undefined, "searching docs…");
       try { ctx = await rag.buildContext(text); } catch (e) { ctx = null; }
     }
-    const useDocs = !!(ctx && ctx.context);
-    const ragMsgs = () => [
-      { role: "system", content: RAG_SYSTEM_PROMPT },
-      ...history.slice(-5, -1),
-      { role: "user", content: ragPrompt(ctx.context, text) }
-    ];
-    // local-model messages (also used for the fallback and the manual "try local" button);
-    // history is captured now, before this turn's answer is appended
-    const localMsgs = useDocs ? ragMsgs()
-      : [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history.slice(-8)];
-    const messages = useDocs ? localMsgs
-      : (cloudMode ? [{ role: "system", content: store.get("sysp_cloud_v2", CLOUD_SYS) || CLOUD_SYS }, ...history.slice(-30)] : localMsgs);
-    if (useDocs) {
+
+    let messages;
+    if (ctx && ctx.context) {
+      // keep history short when context is attached — prefill is expensive here
+      messages = [
+        { role: "system", content: RAG_SYSTEM_PROMPT },
+        ...history.slice(-5, -1),
+        { role: "user", content: ragPrompt(ctx.context, text) }
+      ];
       srcLabel = "من: " + ctx.sources.join("، ") + " · " + ctx.tokens + " tok";
       foot.textContent = srcLabel;
+    } else {
+      messages = [{ role: "system", content: $("sysp").value || DEFAULT_SYS }, ...history.slice(-8)];
     }
     status("busy", undefined, "thinking…");
 
-    const show = d => { reply += d; body.textContent = clean(reply); body.appendChild(caret); scroll(); };
-    const runLocal = async () => {
-      reply = ""; body.textContent = ""; body.appendChild(caret);
-      await localStream(localMsgs, show, sp => {
-        foot.textContent = (srcLabel ? srcLabel + " · " : "") + sp.toFixed(1) + " tok/s";
-        status(undefined, undefined, sp.toFixed(1) + " tok/s");
-      });
-    };
+    const stream = await engine.chat.completions.create({
+      messages,
+      stream: true,
+      stream_options: { include_usage: true },
+      temperature: parseFloat($("temp").value),
+      top_p: 0.9,
+      repetition_penalty: 1.1,
+      max_tokens: 600,
+      ...(modelId.startsWith("Qwen3") ? { extra_body: { enable_thinking: false } } : {})
+    });
 
-    let viaCloud = false;
-    if (cloudMode) {
-      try {
-        cloudAbort = new AbortController();
-        await cloudStream(messages, show, cloudAbort.signal);
-        viaCloud = true;
-        foot.textContent = (srcLabel ? srcLabel + " · " : "") + cloudModel();
-      } catch (e) {
-        if (e.name === "AbortError" || !isFallbackError(e)) throw e;
-        foot.textContent = "تعذّر الرد السحابي (" + cloudError(e) + ") — جاري التحويل للنموذج المحلي…";
-        if (!(await ensureLocal())) throw Object.assign(new Error(cloudError(e) + "\n" + NO_LOCAL), { plain: true });
-        status("busy", undefined, "local…");
-        await runLocal();
-        foot.textContent = "رد محلي (تعذّر الرد السحابي)";
-        status("ready", "SMART · " + cloudModel(), "cloud");
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (delta) {
+        reply += delta;
+        body.textContent = clean(reply);
+        body.appendChild(caret);
+        scroll();
       }
-    } else {
-      await runLocal();
+      if (chunk.usage) {
+        const s = chunk.usage.extra?.decode_tokens_per_s;
+        if (s) {
+          foot.textContent = (srcLabel ? srcLabel + " · " : "") + s.toFixed(1) + " tok/s";
+          status(undefined, undefined, s.toFixed(1) + " tok/s");
+        }
+      }
     }
-
-    const histEntry = { role: "assistant", content: clean(reply) };
-    if (reply) history.push(histEntry);
-
-    if (viaCloud && reply) {
-      const btn = document.createElement("button");
-      btn.className = "retry";
-      btn.textContent = "↻ جرّب بالنموذج المحلي";
-      btn.addEventListener("click", () => retryLocal(body, foot, localMsgs, histEntry, btn));
-      el.appendChild(btn);
-    }
+    if (reply) history.push({ role: "assistant", content: clean(reply) });
   } catch (err) {
     if (body) body.textContent = reply || "";
-    if (foot) foot.textContent = err.name === "AbortError" ? "أُوقف" : "توقف: " + (err.plain ? err.message : (cloudMode ? cloudError(err) : (err.message || err)));
+    if (foot) foot.textContent = "توقف: " + (err.message || err);
     else bubble("ai", "خطأ: " + (err.message || err));
   } finally {
     caret?.remove();
@@ -896,7 +634,7 @@ async function send(){
 }
 
 $("send").addEventListener("click", () => {
-  if (generating) { engine?.interruptGenerate?.(); cloudAbort?.abort(); return; }
+  if (generating) { engine?.interruptGenerate?.(); return; }
   send();
 });
 $("input").addEventListener("input", e => {
@@ -912,27 +650,12 @@ function sheet(open){
   $("scrim").classList.toggle("on", open);
   $("sheet").classList.toggle("on", open);
 }
-$("gear").addEventListener("click", () => {
-  $("cloudOn").checked = cloudMode;
-  $("sProv").value = cloudProv();
-  $("sKey").value = store.get("cloudKey", "");
-  $("sModel").value = cloudModel();
-  $("syspCloud").value = store.get("sysp_cloud_v2", CLOUD_SYS);
-  sheet(true);
-});
+$("gear").addEventListener("click", () => sheet(true));
 $("scrim").addEventListener("click", () => sheet(false));
 $("closeSheet").addEventListener("click", () => {
   store.set("sysp_v3", $("sysp").value);
   store.set("temp2", $("temp").value);
-  const prov = $("sProv").value, key = $("sKey").value.trim();
-  store.set("cloudProvider", prov);
-  store.set("cloudKey", key);
-  store.set("cloudModel", $("sModel").value.trim() || DEF_MODEL[prov]);
-  store.set("sysp_cloud_v2", $("syspCloud").value);
-  const want = $("cloudOn").checked && !!key;
-  store.set("cloudOn", want ? "1" : "0");
   sheet(false);
-  if (want !== cloudMode) location.reload();
 });
 $("temp").addEventListener("input", e => {
   $("tempVal").textContent = (+e.target.value).toFixed(2);
@@ -944,10 +667,8 @@ $("clearChat").addEventListener("click", () => {
 });
 /* ---------- auto-load if the model is already on the device ---------- */
 (async () => {
-  if (cloudMode) { enterCloud(); return; }
   try {
-    const W = await getWebllm();
-    if (await W.hasModelInCache(modelId)) {
+    if (await webllm.hasModelInCache(modelId)) {
       $("loadBtn").textContent = "تشغيل النموذج المحفوظ";
       $("loadBtn").click();
     }
