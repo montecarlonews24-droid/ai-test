@@ -376,18 +376,22 @@ $("temp").value = store.get("temp2", "0.3");
 $("tempVal").textContent = (+$("temp").value).toFixed(2);
 $("ragOn").checked = store.get("ragEnabled", "1") === "1";
 
-/* ---------- built-in mini-encyclopedia: knowledge.json in the same folder ---------- */
-const KB_VERSION = "1";   // bump when knowledge.json changes so it is re-indexed
+/* ---------- built-in mini-encyclopedia: knowledge.json in the same folder ----------
+   Format: {"version":"2","items":[{"name":"...","text":"..."}]}  (a plain array also works = version "1").
+   To update the encyclopedia later, just upload a new knowledge.json with a higher version. */
 async function loadKnowledge(){
-  if (!rag || store.get("kbVersion", "") === KB_VERSION) return;
+  if (!rag) return;
   try {
-    const res = await fetch("knowledge.json?v=" + KB_VERSION, { cache: "no-cache" });
+    const res = await fetch("knowledge.json", { cache: "no-cache" });
     if (!res.ok) return;
-    const items = await res.json();
+    const data = await res.json();
+    const items = Array.isArray(data) ? data : (data.items || []);
+    const ver = Array.isArray(data) ? "1" : String(data.version || "1");
+    if (!items.length || store.get("kbVersion", "") === ver) return;
     $("ragStat").textContent = "جاري تحميل الموسوعة…";
     for (const d of rag.list()) if (d.name.startsWith("[موسوعة]")) await rag.remove(d.id);
     for (const it of items) await rag.addText(it.name, it.text);
-    store.set("kbVersion", KB_VERSION);
+    store.set("kbVersion", ver);
   } catch (e) { /* offline or file missing: try again next launch */ }
   renderDocs();
 }
