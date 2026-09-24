@@ -40,7 +40,9 @@ const STOP = new Set([
   // عربي
   "في","من","على","الى","إلى","عن","مع","هذا","هذه","ذلك","التي","الذي","ما","لا","ان","أن",
   "إن","كان","كانت","هو","هي","هم","قد","كل","بعد","قبل","او","أو","ثم","حتى","لكن","بين",
-  "عند","هناك","يكون","تكون","به","له","بها","لها","و","يا","اي","أي",
+  "عند","هناك","يكون","تكون","به","له","بها","لها","و","يا","اي","أي","ماذا",
+  // أفعال أمر عامة (ترجم لي، لخص لي...) لا تدل على موضوع بحد ذاتها
+  "ترجم","لخص","اشرح","وضح","عرف","قارن","احسب","اكتب","اعطني","اعطيني","اعطي","قل","بين",
   // إنجليزي
   "the","a","an","of","to","in","is","are","was","were","and","or","for","on","at","by","it",
   "this","that","with","as","be","from","but","not","have","has","had","you","i","we","they",
@@ -169,7 +171,9 @@ class BM25 {
   search(query, topK = 2) {
     if (!this.docs.length) return [];
     const qTerms = [...new Set(tokenize(query))];
-    if (!qTerms.length) return [];
+    // أقل من كلمتَي محتوى = سؤال قصير جداً أو مجرد أمر (ترجم/لخص/لماذا) وليس بحثاً حقيقياً.
+    // إرجاع نتيجة هنا يعني مطابقة صدفة بكلمة واحدة، وهذا هو سبب حشر مقاطع غير ذات صلة.
+    if (qTerms.length < 2) return [];
     const N = this.docs.length;
     const qNorm = normalize(query);
 
@@ -376,20 +380,21 @@ export class RAG {
 /* ============================ 6. البرومبت ============================ */
 
 /** استبدل السيستم برومبت بهذا عندما يكون هناك مستندات. */
-export const RAG_SYSTEM_PROMPT = `You are a small offline assistant running on the user's phone.
+export const RAG_SYSTEM_PROMPT = `أنت مساعد صغير يعمل بلا إنترنت على هاتف المستخدم.
 
-You will be given CONTEXT extracted from the user's own documents.
+سيُعطى لك سياق (CONTEXT) مأخوذ من مستندات المستخدم.
 
-Rules:
-- Answer ONLY from the CONTEXT. Do not use your own knowledge.
-- If the CONTEXT does not contain the answer, say exactly: "Not in your documents."
-- Be brief: 1-3 sentences unless asked for detail. Never pad.
-- Do not invent names, numbers, or dates that are not in the CONTEXT.
-- Reply in English.`;
+القواعد:
+- أجب من السياق أولاً. إن كان فيه الجواب فاذكره بوضوح وبأسلوبك.
+- إن كان السياق يغطي جزءاً من السؤال فقط، أجب بما فيه واذكر أن الباقي غير متوفر في مستنداتك.
+- إن لم يكن للسياق أي علاقة بالسؤال، تجاهله تماماً وأجب من معرفتك العامة بأفضل ما لديك.
+- كن موجزاً: من جملة إلى ثلاث جمل إلا إذا طُلب التفصيل.
+- لا تخترع أسماء أو أرقاماً أو تواريخ ليست في السياق.
+- أجب بالعربية، إلا إذا طلب المستخدم لغة أخرى صراحة.`;
 
 /** يغلّف السؤال مع السياق. استخدمه كرسالة user. */
 export function ragPrompt(context, question) {
-  return `CONTEXT:\n${context}\n\nQUESTION: ${question}\n\nAnswer from the CONTEXT only.`;
+  return `السياق:\n${context}\n\nالسؤال: ${question}`;
 }
 
 /* ============================ 7. أداة قياس (اختيارية) ============================ */
