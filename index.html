@@ -201,6 +201,22 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   cursor:pointer;padding:0 3px;line-height:1;flex:0 0 auto;
 }
 .docempty{font-size:12.5px;color:var(--ink-soft);padding:3px 1px}
+/* ---------- agent mode ---------- */
+.msg .body .astep{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0 0 8px;background:var(--paper)}
+.astep .ahead{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);direction:ltr;text-align:left;margin-bottom:4px}
+.astep .athink{font-size:13px;color:var(--ink-soft);margin-bottom:4px;white-space:pre-wrap}
+.astep details{margin:2px 0}
+.astep summary{font-size:12.5px;color:var(--signal);cursor:pointer}
+.astep pre,.alive{font-family:var(--mono);font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;
+  direction:ltr;text-align:left;margin:4px 0 0;max-height:220px;overflow:auto;background:var(--card);
+  border:1px solid var(--line);border-radius:8px;padding:7px}
+.alive{color:var(--ink-soft)}
+.afinal{white-space:pre-wrap}
+.afile{display:flex;align-items:center;gap:8px;border:1px solid var(--signal);background:var(--signal-soft);
+  border-radius:10px;padding:8px 10px;margin:0 0 8px}
+.afile .fn{flex:1;font-family:var(--mono);font-size:12px;direction:ltr;text-align:left;word-break:break-all}
+.afile button{flex:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;
+  padding:6px 10px;font-family:var(--sans);font-size:12.5px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -335,6 +351,12 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
     <div class="doclist" id="docList"></div>
   </div>
 
+  <div class="field">
+    <label>وضع الوكيل</label>
+    <div class="sub">النموذج بينفّذ المهمة بخطوات ويستعمل أدوات: تشغيل كود JavaScript، إنشاء ملف تحمّله، والبحث بمستنداتك. أقصى 3 خطوات. أفضل نموذج له: Qwen 2.5 Coder أو Qwen 2.5 ‑ 3B.</div>
+    <label class="toggle"><input type="checkbox" id="agentOn"> تفعيل وضع الوكيل</label>
+  </div>
+
   <button class="ghostbtn" id="clearChat">مسح المحادثة</button>
   <button class="ghostbtn danger" id="wipeModel">حذف النموذج من الجهاز</button>
   <button class="primary" id="closeSheet">تم</button>
@@ -457,6 +479,9 @@ $("docFile").addEventListener("change", async e => {
   e.target.value = "";
 });
 
+$("agentOn").checked = store.get("agentOn", "0") === "1";
+$("agentOn").addEventListener("change", e => store.set("agentOn", e.target.checked ? "1" : "0"));
+
 $("ragOn").addEventListener("change", e => {
   store.set("ragEnabled", e.target.checked ? "1" : "0");
 });
@@ -555,7 +580,7 @@ function bubble(role, text){
   const el = document.createElement("div");
   el.className = "msg " + (role === "user" ? "user" : "ai");
   el.innerHTML = '<div class="who"></div><div class="body"></div><div class="foot"></div>';
-  el.querySelector(".who").textContent = role === "user" ? "YOU" : "LOCAL MODEL";
+  el.querySelector(".who").textContent = role === "user" ? "YOU" : (role === "agent" ? "AGENT" : "LOCAL MODEL");
   el.querySelector(".body").textContent = text || "";
   $("thread").appendChild(el);
   scroll();
@@ -566,6 +591,7 @@ function scroll(){ $("stage").scrollTop = $("stage").scrollHeight; }
 const clean = r => r.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
 
 async function send(){
+  if ($("agentOn").checked) return runAgent();
   const text = $("input").value.trim();
   if (!text || !engine || generating) return;
 
@@ -656,8 +682,243 @@ async function send(){
   }
 }
 
+/* ---------- agent mode: a small plan → tool → observe loop ---------- */
+const AGENT_MAX_STEPS = 3;
+let agentStop = false;
+
+const AGENT_SYS = `أنت وكيل صغير يعمل على هاتف المستخدم. تنجز المهمة بخطوات قليلة، وعندك ثلاث أدوات:
+
+run_js: يشغّل كود JavaScript ويعيد ما يطبعه console.log. استعمله للحساب أو لتجربة كود.
+create_file: ينشئ ملفاً يحمّله المستخدم (مثل index.html). اكتب المحتوى كاملاً.
+search_docs: يبحث في مستندات المستخدم.
+
+في كل رد افعل شيئاً واحداً فقط، بهذا الشكل بالضبط:
+
+لتشغيل كود:
+ACTION: run_js
+INPUT:
+console.log(17 * 23)
+
+لإنشاء ملف:
+ACTION: create_file
+NAME: index.html
+INPUT:
+<!DOCTYPE html>
+...المحتوى كاملاً...
+
+للبحث في المستندات:
+ACTION: search_docs
+INPUT: كلمات البحث
+
+للإجابة النهائية:
+FINAL: الجواب للمستخدم بالعربية
+
+القواعد:
+- بعد كل أداة ستصلك OBSERVATION فيها النتيجة. اقرأها ثم قرر الخطوة التالية.
+- إذا كانت المهمة لا تحتاج أداة فاكتب FINAL مباشرة.
+- لا تكتب OBSERVATION بنفسك ولا تخترع نتائج.
+- بعد إنشاء الملف اكتب FINAL واشرح باختصار ما فيه.`;
+
+function stripFence(s){
+  const m = String(s).match(/```[\w.-]*[ \t]*\n?([\s\S]*?)(```|$)/);
+  return m ? m[1] : s;
+}
+
+function parseAgent(raw){
+  const t = clean(raw).trim();
+  const ai = t.search(/ACTION\s*:/i);
+  const fi = t.search(/FINAL\s*:/i);
+  if (ai !== -1 && (fi === -1 || ai < fi)) {
+    const rest = t.slice(ai);
+    const tool = ((rest.match(/ACTION\s*:\s*([a-zA-Z_]+)/) || [])[1] || "").toLowerCase();
+    const name = ((rest.match(/\n\s*NAME\s*:\s*([^\n]+)/i) || [])[1] || "").trim();
+    let input = "";
+    const ii = rest.search(/INPUT\s*:/i);
+    if (ii !== -1) input = rest.slice(ii).replace(/^INPUT\s*:[ \t]*/i, "");
+    return { type: "action", tool, name, input: stripFence(input).trim(), thought: t.slice(0, ai).trim(), raw: t };
+  }
+  if (fi !== -1) return { type: "final", text: t.slice(fi).replace(/^FINAL\s*:\s*/i, "").trim() };
+  return { type: "final", text: t };
+}
+
+// runs untrusted model-written JS in a throwaway Worker: no page access, killed after 4 s
+function runJS(code){
+  return new Promise(resolve => {
+    const src =
+      'self.onmessage=function(e){var out=[];' +
+      'function fmt(x){if(typeof x==="string")return x;try{return JSON.stringify(x)}catch(_){return String(x)}}' +
+      'console.log=console.info=console.warn=console.error=function(){out.push(Array.prototype.map.call(arguments,fmt).join(" "))};' +
+      'try{var r=(0,eval)(e.data);if(r!==undefined&&typeof r!=="function")out.push("=> "+fmt(r));' +
+      'self.postMessage(out.join("\\n")||"(لا يوجد ناتج — استعمل console.log)")}' +
+      'catch(err){self.postMessage((out.length?out.join("\\n")+"\\n":"")+"Error: "+err.message)}};';
+    let w, url;
+    const done = msg => { clearTimeout(timer); try { w && w.terminate(); } catch (e) {} try { URL.revokeObjectURL(url); } catch (e) {} resolve(msg); };
+    const timer = setTimeout(() => done("Error: انتهت المهلة (4 ثوانٍ) — ربما حلقة لا تنتهي"), 4000);
+    try {
+      url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+      w = new Worker(url);
+      w.onmessage = e => done(String(e.data).slice(0, 2000));
+      w.onerror = e => { e.preventDefault?.(); done("Error: " + (e.message || "خطأ في الكود")); };
+      w.postMessage(code);
+    } catch (e) { done("Error: " + (e.message || e)); }
+  });
+}
+
+function fileCard(container, name, content){
+  const card = document.createElement("div");
+  card.className = "afile";
+  card.innerHTML = '<span class="fn"></span><button type="button">نسخ</button><button type="button">تنزيل</button>';
+  card.querySelector(".fn").textContent = "📄 " + name + " · " + content.length + " حرف";
+  const [copyBtn, dlBtn] = card.querySelectorAll("button");
+  copyBtn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(content); copyBtn.textContent = "تم النسخ"; }
+    catch (e) {
+      const ta = document.createElement("textarea"); ta.value = content; document.body.appendChild(ta);
+      ta.select(); try { document.execCommand("copy"); copyBtn.textContent = "تم النسخ"; } catch (_) {} ta.remove();
+    }
+  });
+  dlBtn.addEventListener("click", () => {
+    const type = /\.html?$/i.test(name) ? "text/html" : /\.json$/i.test(name) ? "application/json"
+      : /\.js$/i.test(name) ? "text/javascript" : "text/plain";
+    const url = URL.createObjectURL(new Blob([content], { type: type + ";charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  });
+  container.appendChild(card);
+}
+
+async function runTool(p, filesBox){
+  if (p.tool === "run_js") {
+    if (!p.input) return "Error: لا يوجد كود.";
+    return await runJS(p.input);
+  }
+  if (p.tool === "create_file") {
+    if (!p.input) return "Error: محتوى الملف فارغ.";
+    const name = (p.name || "index.html").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80) || "index.html";
+    fileCard(filesBox, name, p.input);
+    return "تم إنشاء الملف " + name + " (" + p.input.length + " حرف) وعرضه للمستخدم مع زرّي نسخ وتنزيل.";
+  }
+  if (p.tool === "search_docs") {
+    if (!rag || !rag.list().length) return "لا توجد مستندات محفوظة.";
+    try {
+      const c = await rag.buildContext(p.input);
+      return c && c.context ? c.context.slice(0, 1800) : "لم أجد شيئاً متعلقاً في المستندات.";
+    } catch (e) { return "Error: " + (e.message || e); }
+  }
+  return "Error: أداة غير معروفة \"" + p.tool + "\". الأدوات المتاحة: run_js, create_file, search_docs";
+}
+
+function addStep(stepsBox, n, p, result){
+  const st = document.createElement("div");
+  st.className = "astep";
+  st.innerHTML = '<div class="ahead"></div><div class="athink"></div><details><summary>المدخل</summary><pre class="ain"></pre></details><pre class="aout"></pre>';
+  st.querySelector(".ahead").textContent = "step " + n + " · " + (p.tool || "?");
+  if (p.thought) st.querySelector(".athink").textContent = p.thought; else st.querySelector(".athink").remove();
+  st.querySelector(".ain").textContent = (p.name ? "NAME: " + p.name + "\n" : "") + (p.input || "");
+  st.querySelector(".aout").textContent = result;
+  stepsBox.appendChild(st);
+}
+
+async function runAgent(){
+  const text = $("input").value.trim();
+  if (!text || !engine || generating) return;
+
+  $("input").value = "";
+  $("input").style.height = "auto";
+  bubble("user", text);
+  history.push({ role: "user", content: text });
+
+  generating = true; agentStop = false;
+  $("send").classList.add("stop");
+  $("send").innerHTML = "&#9632;";
+
+  const el = bubble("agent", "");
+  const body = el.querySelector(".body"), foot = el.querySelector(".foot");
+  body.textContent = "";
+  const stepsBox = document.createElement("div");
+  const filesBox = document.createElement("div");
+  const live = document.createElement("div"); live.className = "alive";
+  const finalBox = document.createElement("div"); finalBox.className = "afinal";
+  body.append(stepsBox, filesBox, live, finalBox);
+
+  const msgs = [{ role: "system", content: AGENT_SYS }, ...history.slice(-5)];
+  let finalText = "", toolsUsed = 0;
+
+  try {
+    for (let step = 0; step <= AGENT_MAX_STEPS && !agentStop; step++) {
+      status("busy", undefined, step === 0 ? "planning…" : "step " + (step + 1) + "…");
+      live.textContent = "…";
+      let raw = "";
+      const stream = await engine.chat.completions.create({
+        messages: msgs,
+        stream: true,
+        stream_options: { include_usage: true },
+        temperature: Math.min(parseFloat($("temp").value) || 0.3, 0.4),
+        top_p: 0.9,
+        repetition_penalty: 1.05,
+        max_tokens: 1200,
+        stop: ["OBSERVATION"],
+        ...(modelId.startsWith("Qwen3") ? { extra_body: { enable_thinking: false } } : {})
+      });
+      for await (const chunk of stream) {
+        const d = chunk.choices?.[0]?.delta?.content;
+        if (d) { raw += d; live.textContent = clean(raw); scroll(); }
+        const sp = chunk.usage?.extra?.decode_tokens_per_s;
+        if (sp) status(undefined, undefined, sp.toFixed(1) + " tok/s");
+      }
+      if (agentStop) break;
+
+      const p = parseAgent(raw);
+      if (p.type === "action" && step < AGENT_MAX_STEPS) {
+        live.textContent = "";
+        status("busy", undefined, p.tool + "…");
+        const result = await runTool(p, filesBox);
+        toolsUsed++;
+        addStep(stepsBox, toolsUsed, p, result);
+        scroll();
+        msgs.push({ role: "assistant", content: p.raw.slice(0, 4000) });
+        const last = step + 1 === AGENT_MAX_STEPS;
+        msgs.push({ role: "user", content: "OBSERVATION:\n" + String(result).slice(0, 1800) +
+          (last ? "\n\nانتهت الخطوات المسموحة. اكتب الآن FINAL: ثم الإجابة للمستخدم." : "") });
+        continue;
+      }
+      // a final answer — or an action after the step limit, which we show as text instead of running
+      finalText = p.type === "final" ? p.text : clean(raw).trim();
+      break;
+    }
+
+    live.remove();
+    if (agentStop) {
+      finalBox.textContent = finalText || "أُوقف الوكيل.";
+    } else {
+      // code written straight into the answer (no create_file) still gets copy/download buttons
+      const fence = finalText.match(/```([\w.-]*)[ \t]*\n([\s\S]*?)```/);
+      if (fence && fence[2].trim().length > 40) {
+        const lang = (fence[1] || "").toLowerCase();
+        const ext = /html/.test(lang) ? "html" : /js|javascript/.test(lang) ? "js" : /css/.test(lang) ? "css"
+          : /json/.test(lang) ? "json" : /<html|<!doctype/i.test(fence[2]) ? "html" : "txt";
+        fileCard(filesBox, (ext === "html" ? "index" : "code") + "." + ext, fence[2].trim());
+      }
+      finalBox.textContent = finalText || (toolsUsed ? "انتهت الخطوات." : "(لا يوجد رد)");
+    }
+    foot.textContent = toolsUsed ? toolsUsed + " أداة مستعملة" : "بدون أدوات";
+    if (finalText) history.push({ role: "assistant", content: finalText.slice(0, 1500) });
+  } catch (err) {
+    live.remove();
+    finalBox.textContent = finalText || "";
+    foot.textContent = "توقف: " + (err.message || err);
+  } finally {
+    generating = false;
+    $("send").classList.remove("stop");
+    $("send").innerHTML = "&#10148;";
+    status("ready");
+    scroll();
+  }
+}
+
 $("send").addEventListener("click", () => {
-  if (generating) { engine?.interruptGenerate?.(); return; }
+  if (generating) { agentStop = true; engine?.interruptGenerate?.(); return; }
   send();
 });
 $("input").addEventListener("input", e => {
