@@ -735,6 +735,7 @@ function parseAgent(raw){
     let input = "";
     const ii = rest.search(/INPUT\s*:/i);
     if (ii !== -1) input = rest.slice(ii).replace(/^INPUT\s*:[ \t]*/i, "");
+    input = input.replace(/\n?\s*OBSERV[\s\S]*$/i, "");
     return { type: "action", tool, name, input: stripFence(input).trim(), thought: t.slice(0, ai).trim(), raw: t };
   }
   if (fi !== -1) return { type: "final", text: t.slice(fi).replace(/^FINAL\s*:\s*/i, "").trim() };
@@ -877,6 +878,10 @@ async function runAgent(){
         toolsUsed++;
         addStep(stepsBox, toolsUsed, p, result);
         scroll();
+        if (p.tool === "create_file" && !String(result).startsWith("Error")) {
+          finalText = "تم إنشاء الملف. اضغط «تنزيل» لحفظه، أو «نسخ» ثم الصقه في ملف جديد على GitHub.";
+          break;
+        }
         msgs.push({ role: "assistant", content: p.raw.slice(0, 4000) });
         const last = step + 1 === AGENT_MAX_STEPS;
         msgs.push({ role: "user", content: "OBSERVATION:\n" + String(result).slice(0, 1800) +
