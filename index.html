@@ -151,6 +151,15 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   border-radius:10px;padding:7px 10px;font-family:var(--mono);font-size:12px;direction:ltr;text-align:left;min-width:0}
 .attachbar .chip span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attachbar .chip button{flex:none;border:none;background:none;color:var(--fail);font-size:16px;cursor:pointer}
+.quickbar{flex:0 0 auto;background:var(--card);border-top:1px solid var(--line);padding:8px 12px 0;
+  display:flex;gap:7px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.quickbar[hidden]{display:none}
+.quickbar::-webkit-scrollbar{display:none}
+.quickbar button{flex:none;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:20px;
+  padding:7px 13px;font-family:var(--sans);font-size:13px;cursor:pointer;white-space:nowrap}
+.filelib .afile{margin-bottom:7px}
+.filelib .afile .fd{display:block;font-size:10px;color:var(--ink-soft)}
+.afile button.del{color:var(--fail)}
 .send:disabled{background:#A9B4C2}
 .send.stop{background:var(--fail)}
 
@@ -326,6 +335,12 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   </section>
 </div>
 
+<div class="quickbar" id="quickBar" hidden>
+  <button type="button" data-q="new">📄 صفحة جديدة</button>
+  <button type="button" data-q="edit">✏️ عدّل ملفاً</button>
+  <button type="button" data-q="explain">🔍 اشرح ملفاً</button>
+  <button type="button" data-q="calc">🧮 احسب</button>
+</div>
 <div class="attachbar" id="attachBar" hidden>
   <div class="chip"><span id="attachName"></span><button type="button" id="attachX" aria-label="إزالة الملف">×</button></div>
 </div>
@@ -376,6 +391,12 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
     <label>وضع الوكيل</label>
     <div class="sub">النموذج بينفّذ المهمة بخطوات ويستعمل أدوات: تشغيل كود JavaScript، إنشاء ملف تحمّله، والبحث بمستنداتك. أقصى 3 خطوات. أفضل نموذج له: Qwen 2.5 Coder أو Qwen 2.5 ‑ 3B.</div>
     <div class="sub" style="color:var(--live)">مفعّل دائماً.</div>
+  </div>
+
+  <div class="field">
+    <label>ملفاتي</label>
+    <div class="sub">كل ملف ينشئه الوكيل يُحفظ هنا على جهازك (آخر 30 ملفاً).</div>
+    <div class="filelib" id="fileLib"></div>
   </div>
 
   <button class="ghostbtn" id="clearChat">مسح المحادثة</button>
@@ -549,6 +570,7 @@ $("loadBtn").addEventListener("click", async () => {
     $("setup").hidden = true;
     $("thread").hidden = false;
     $("composer").hidden = false;
+    $("quickBar").hidden = false;
     $("gear").hidden = false;
     status("ready", modelId.replace(/-Instruct/i, "").replace(/-q4f\d+_1-MLC/, "").toUpperCase(), "on-device");
     $("input").focus();
@@ -835,7 +857,66 @@ function openPreview(name, content){
   document.body.appendChild(ov);
 }
 
-function fileCard(container, name, content){
+/* ---------- saved files library + saved chat (both in localStorage, on this device only) ---------- */
+const LIB_KEY = "agentFiles_v1", LOG_KEY = "chatLog_v1", HIST_KEY = "chatHist_v1";
+const LIB_MAX = 30, LOG_MAX = 40;
+let turnFiles = null;   // collects files made during the current agent turn
+
+function loadJSON(k, d){ try { const v = JSON.parse(localStorage.getItem(k) || "null"); return v == null ? d : v; } catch (e) { return d; } }
+function saveJSON(k, v){
+  try { localStorage.setItem(k, JSON.stringify(v)); return true; }
+  catch (e) { return false; }   // storage full: keep working, just don't persist
+}
+
+function libAdd(name, content){
+  const lib = loadJSON(LIB_KEY, []);
+  lib.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, content, t: Date.now() });
+  while (lib.length > LIB_MAX) lib.pop();
+  while (lib.length > 1 && !saveJSON(LIB_KEY, lib)) lib.pop();   // drop oldest until it fits
+}
+function renderLib(){
+  const box = $("fileLib"), lib = loadJSON(LIB_KEY, []);
+  box.innerHTML = "";
+  if (!lib.length) { box.innerHTML = '<div class="docempty">لا توجد ملفات بعد.</div>'; return; }
+  lib.forEach(f => {
+    const card = fileCard(box, f.name, f.content, false);
+    const d = document.createElement("span"); d.className = "fd";
+    d.textContent = new Date(f.t).toLocaleString("ar", { dateStyle: "short", timeStyle: "short" });
+    card.querySelector(".fn").appendChild(d);
+    const del = document.createElement("button"); del.type = "button"; del.className = "del"; del.textContent = "حذف";
+    del.addEventListener("click", () => {
+      saveJSON(LIB_KEY, loadJSON(LIB_KEY, []).filter(x => x.id !== f.id));
+      renderLib();
+    });
+    card.appendChild(del);
+  });
+}
+
+function logAdd(entry){
+  const log = loadJSON(LOG_KEY, []);
+  log.push(entry);
+  while (log.length > LOG_MAX) log.shift();
+  while (log.length > 2 && !saveJSON(LOG_KEY, log)) log.shift();
+  saveJSON(HIST_KEY, history.slice(-12));
+}
+function restoreChat(){
+  const log = loadJSON(LOG_KEY, []);
+  history = loadJSON(HIST_KEY, []);
+  log.forEach(m => {
+    if (m.role === "user") { bubble("user", m.text); return; }
+    const el = bubble("agent", "");
+    const body = el.querySelector(".body");
+    body.textContent = "";
+    const files = document.createElement("div");
+    (m.files || []).forEach(f => fileCard(files, f.name, f.content, false));
+    const fin = document.createElement("div"); fin.className = "afinal"; fin.textContent = m.text || "";
+    body.append(files, fin);
+    el.querySelector(".foot").textContent = m.foot || "";
+  });
+}
+
+function fileCard(container, name, content, save = true){
+  if (save) { libAdd(name, content); if (turnFiles) turnFiles.push({ name, content }); }
   const card = document.createElement("div");
   card.className = "afile";
   const isHtml = /\.html?$/i.test(name);
@@ -860,6 +941,7 @@ function fileCard(container, name, content){
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   });
   container.appendChild(card);
+  return card;
 }
 
 async function runTool(p, filesBox){
@@ -904,6 +986,8 @@ async function runAgent(){
   $("input").style.height = "auto";
   bubble("user", att.label);
   history.push({ role: "user", content: text });
+  logAdd({ role: "user", text: att.label });
+  turnFiles = [];
 
   generating = true; agentStop = false;
   $("send").classList.add("stop");
@@ -984,11 +1068,13 @@ async function runAgent(){
     }
     foot.textContent = toolsUsed ? toolsUsed + " أداة مستعملة" : "بدون أدوات";
     if (finalText) history.push({ role: "assistant", content: finalText.slice(0, 1500) });
+    logAdd({ role: "agent", text: finalBox.textContent, files: turnFiles || [], foot: foot.textContent });
   } catch (err) {
     live.remove();
     finalBox.textContent = finalText || "";
     foot.textContent = "توقف: " + (err.message || err);
   } finally {
+    turnFiles = null;
     generating = false;
     $("send").classList.remove("stop");
     $("send").innerHTML = "&#10148;";
@@ -996,6 +1082,20 @@ async function runAgent(){
     scroll();
   }
 }
+
+/* ---------- quick task buttons ---------- */
+$("quickBar").addEventListener("click", e => {
+  const b = e.target.closest("button[data-q]");
+  if (!b || generating) return;
+  const q = b.getAttribute("data-q");
+  const set = t => { $("input").value = t; $("input").focus(); $("input").setSelectionRange(t.length, t.length); };
+  if (q === "new") set("أنشئ ملف index.html فيه ");
+  else if (q === "calc") set("احسب ");
+  else if (q === "edit") { set("عدّل الملف المرفق: "); $("attachFile").click(); }
+  else if (q === "explain") { set("اشرح هذا الملف باختصار"); $("attachFile").click(); }
+});
+
+restoreChat();
 
 $("send").addEventListener("click", () => {
   if (generating) { agentStop = true; engine?.interruptGenerate?.(); return; }
@@ -1014,7 +1114,7 @@ function sheet(open){
   $("scrim").classList.toggle("on", open);
   $("sheet").classList.toggle("on", open);
 }
-$("gear").addEventListener("click", () => sheet(true));
+$("gear").addEventListener("click", () => { renderLib(); sheet(true); });
 $("scrim").addEventListener("click", () => sheet(false));
 $("closeSheet").addEventListener("click", () => {
   store.set("sysp_v3", $("sysp").value);
@@ -1026,6 +1126,7 @@ $("temp").addEventListener("input", e => {
 });
 $("clearChat").addEventListener("click", () => {
   history = [];
+  try { localStorage.removeItem(LOG_KEY); localStorage.removeItem(HIST_KEY); } catch (e) {}
   $("thread").innerHTML = '<div class="empty" id="empty">تم مسح المحادثة.</div>';
   sheet(false);
 });
