@@ -828,8 +828,28 @@ function stripFence(s){
   return m ? m[1] : s;
 }
 
+// Qwen 3 often answers as JSON instead of the plain ACTION:/INPUT: lines; JSON.parse also undoes the \n and \" escapes
+function parseAgentJSON(t){
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a === -1 || b <= a) return null;
+  let o;
+  try { o = JSON.parse(t.slice(a, b + 1)); } catch (e) { return null; }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+  const get = (...ks) => { for (const k of Object.keys(o)) if (ks.includes(k.toLowerCase())) return o[k]; return undefined; };
+  const action = get("action", "tool"), fin = get("final", "answer");
+  if (typeof action === "string" && action.trim()) {
+    const input = get("input", "content", "code", "query");
+    return { type: "action", tool: action.trim().toLowerCase(), name: String(get("name", "filename", "file") || "").trim(),
+             input: typeof input === "string" ? input.trim() : JSON.stringify(input ?? ""), thought: "", raw: t };
+  }
+  if (typeof fin === "string") return { type: "final", text: fin.trim() };
+  return null;
+}
+
 function parseAgent(raw){
   const t = clean(raw).trim();
+  const j = /"\s*action\s*"\s*:|"\s*final\s*"\s*:/i.test(t) ? parseAgentJSON(t) : null;
+  if (j) return j;
   const ai = t.search(/ACTION\s*:/i);
   const fi = t.search(/FINAL\s*:/i);
   if (ai !== -1 && (fi === -1 || ai < fi)) {
@@ -1123,8 +1143,8 @@ async function runAgent(){
       const fence = finalText.match(/```([\w.-]*)[ \t]*\n([\s\S]*?)```/);
       if (fence && fence[2].trim().length > 40) {
         const lang = (fence[1] || "").toLowerCase();
-        const ext = /html/.test(lang) ? "html" : /js|javascript/.test(lang) ? "js" : /css/.test(lang) ? "css"
-          : /json/.test(lang) ? "json" : /<html|<!doctype/i.test(fence[2]) ? "html" : "txt";
+        const ext = /<html|<!doctype/i.test(fence[2]) ? "html" : lang === "html" ? "html" : lang === "json" ? "json"
+          : (lang === "js" || lang === "javascript") ? "js" : lang === "css" ? "css" : "txt";
         fileCard(filesBox, (ext === "html" ? "index" : "code") + "." + ext, fence[2].trim());
       }
       finalBox.textContent = finalText || (toolsUsed ? "انتهت الخطوات." : "(لا يوجد رد)");
