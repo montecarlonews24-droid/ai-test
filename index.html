@@ -140,6 +140,17 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   background:var(--signal);color:#fff;font-size:19px;cursor:pointer;
   display:grid;place-items:center;
 }
+.attach{
+  flex:0 0 auto;width:46px;height:46px;border-radius:12px;border:1px solid var(--line);
+  background:var(--paper);color:var(--ink);font-size:20px;cursor:pointer;display:grid;place-items:center;
+}
+.attachbar{flex:0 0 auto;background:var(--card);border-top:1px solid var(--line);padding:8px 12px 0;
+  display:flex;align-items:center;gap:8px}
+.attachbar[hidden]{display:none}
+.attachbar .chip{flex:1;display:flex;align-items:center;gap:8px;background:var(--signal-soft);border:1px solid var(--signal);
+  border-radius:10px;padding:7px 10px;font-family:var(--mono);font-size:12px;direction:ltr;text-align:left;min-width:0}
+.attachbar .chip span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachbar .chip button{flex:none;border:none;background:none;color:var(--fail);font-size:16px;cursor:pointer}
 .send:disabled{background:#A9B4C2}
 .send.stop{background:var(--fail)}
 
@@ -217,6 +228,11 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
 .afile .fn{flex:1;font-family:var(--mono);font-size:12px;direction:ltr;text-align:left;word-break:break-all}
 .afile button{flex:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;
   padding:6px 10px;font-family:var(--sans);font-size:12.5px;cursor:pointer}
+.preview{position:fixed;inset:0;z-index:50;background:rgba(10,15,25,.6);display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 10px calc(env(safe-area-inset-bottom,0px) + 10px)}
+.preview .pbar{display:flex;justify-content:space-between;align-items:center;color:#fff;font-size:14px;margin-bottom:8px}
+.preview .pbar button{border:none;background:#fff;color:#141E28;border-radius:9px;padding:8px 16px;font-family:var(--sans);font-size:14px}
+.preview iframe{flex:1;width:100%;border:none;border-radius:12px;background:#fff}
 </style>
 </head>
 <body>
@@ -310,7 +326,12 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   </section>
 </div>
 
+<div class="attachbar" id="attachBar" hidden>
+  <div class="chip"><span id="attachName"></span><button type="button" id="attachX" aria-label="إزالة الملف">×</button></div>
+</div>
 <div class="composer" id="composer" hidden>
+  <input type="file" id="attachFile" accept=".html,.htm,.js,.css,.json,.txt,.md,.csv,.xml,.svg,text/*" hidden>
+  <button class="attach" id="attachBtn" aria-label="إرفاق ملف">&#128206;</button>
   <textarea id="input" rows="1" placeholder="اكتب رسالتك…" dir="auto"></textarea>
   <button class="send" id="send" aria-label="إرسال">&#10148;</button>
 </div>
@@ -574,6 +595,42 @@ async function createEngine(id, onProgress){
   return await webllm.CreateMLCEngine(id, { initProgressCallback: onProgress });
 }
 
+/* ---------- attachments: one text file sent along with the next message ---------- */
+const ATTACH_MAX = 5000;     // small models have a ~4k-token window; bigger files get cut
+let attached = null;         // { name, text }
+
+function renderAttach(){
+  $("attachBar").hidden = !attached;
+  if (attached) $("attachName").textContent = "📎 " + attached.name + " · " + attached.text.length + " حرف" +
+    (attached.text.length > ATTACH_MAX ? " (سيُقرأ أول " + ATTACH_MAX + " فقط)" : "");
+}
+$("attachBtn").addEventListener("click", () => { if (!generating) $("attachFile").click(); });
+$("attachFile").addEventListener("change", async e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  if (f.size > 300000) { alert("الملف كبير جداً. الحد 300 KB، والنموذج يقرأ أول " + ATTACH_MAX + " حرف فقط."); return; }
+  try {
+    const text = await f.text();
+    if (!text.trim()) { alert("الملف فارغ."); return; }
+    attached = { name: f.name, text };
+    renderAttach();
+  } catch (err) { alert("تعذّر قراءة الملف: " + (err.message || err)); }
+});
+$("attachX").addEventListener("click", () => { attached = null; renderAttach(); });
+
+// merges the attached file into the outgoing message; returns what to send and what to show
+function takeAttachment(typed){
+  if (!attached) return { full: typed, label: typed, hasFile: false };
+  const a = attached; attached = null; renderAttach();
+  const body = a.text.length > ATTACH_MAX ? a.text.slice(0, ATTACH_MAX) + "\n…(قُطع باقي الملف)" : a.text;
+  return {
+    full: (typed || "اقرأ الملف المرفق ولخّص ما فيه.") + "\n\nالملف المرفق: " + a.name + "\n```\n" + body + "\n```",
+    label: (typed ? typed + "\n" : "") + "📎 " + a.name,
+    hasFile: true
+  };
+}
+
 /* ---------- chat ---------- */
 function bubble(role, text){
   document.getElementById("empty")?.remove();
@@ -592,12 +649,14 @@ const clean = r => r.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
 
 async function send(){
   if ($("agentOn").checked) return runAgent();
-  const text = $("input").value.trim();
-  if (!text || !engine || generating) return;
+  const typed = $("input").value.trim();
+  if ((!typed && !attached) || !engine || generating) return;
+  const att = takeAttachment(typed);
+  const text = att.full;
 
   $("input").value = "";
   $("input").style.height = "auto";
-  bubble("user", text);
+  bubble("user", att.label);
   history.push({ role: "user", content: text });
 
   generating = true;
@@ -617,7 +676,7 @@ async function send(){
 
     // ---- RAG: look in the user's documents before asking the model ----
     let ctx = null, srcLabel = "";
-    if (rag && $("ragOn").checked && rag.list().length) {
+    if (!att.hasFile && rag && $("ragOn").checked && rag.list().length) {
       status("busy", undefined, "searching docs…");
       // a very short follow-up ("وماذا عن الثاني؟") has no keywords of its own: borrow the previous question
       const prevUser = [...history].reverse().slice(1).find(m => m.role === "user");
@@ -717,7 +776,8 @@ FINAL: الجواب للمستخدم بالعربية
 - بعد كل أداة ستصلك OBSERVATION فيها النتيجة. اقرأها ثم قرر الخطوة التالية.
 - إذا كانت المهمة لا تحتاج أداة فاكتب FINAL مباشرة.
 - لا تكتب OBSERVATION بنفسك ولا تخترع نتائج.
-- بعد إنشاء الملف اكتب FINAL واشرح باختصار ما فيه.`;
+- بعد إنشاء الملف اكتب FINAL واشرح باختصار ما فيه.
+- إذا أرفق المستخدم ملفاً وطلب تعديله، اكتب النسخة المعدّلة كاملة بـ create_file وبنفس اسم الملف.`;
 
 function stripFence(s){
   const m = String(s).match(/```[\w.-]*[ \t]*\n?([\s\S]*?)(```|$)/);
@@ -765,12 +825,27 @@ function runJS(code){
   });
 }
 
+// shows a generated page inside the app; sandboxed so its scripts can't touch ai-test itself
+function openPreview(name, content){
+  const ov = document.createElement("div");
+  ov.className = "preview";
+  ov.innerHTML = '<div class="pbar"><span></span><button type="button">إغلاق</button></div>' +
+    '<iframe sandbox="allow-scripts allow-forms allow-modals"></iframe>';
+  ov.querySelector("span").textContent = "معاينة: " + name;
+  ov.querySelector("iframe").srcdoc = content;
+  ov.querySelector("button").addEventListener("click", () => ov.remove());
+  document.body.appendChild(ov);
+}
+
 function fileCard(container, name, content){
   const card = document.createElement("div");
   card.className = "afile";
-  card.innerHTML = '<span class="fn"></span><button type="button">نسخ</button><button type="button">تنزيل</button>';
+  const isHtml = /\.html?$/i.test(name);
+  card.innerHTML = '<span class="fn"></span>' + (isHtml ? '<button type="button" class="pv">معاينة</button>' : '') +
+    '<button type="button">نسخ</button><button type="button">تنزيل</button>';
+  if (isHtml) card.querySelector(".pv").addEventListener("click", () => openPreview(name, content));
   card.querySelector(".fn").textContent = "📄 " + name + " · " + content.length + " حرف";
-  const [copyBtn, dlBtn] = card.querySelectorAll("button");
+  const [copyBtn, dlBtn] = card.querySelectorAll("button:not(.pv)");
   copyBtn.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(content); copyBtn.textContent = "تم النسخ"; }
     catch (e) {
@@ -822,12 +897,14 @@ function addStep(stepsBox, n, p, result){
 }
 
 async function runAgent(){
-  const text = $("input").value.trim();
-  if (!text || !engine || generating) return;
+  const typed = $("input").value.trim();
+  if ((!typed && !attached) || !engine || generating) return;
+  const att = takeAttachment(typed);
+  const text = att.full;
 
   $("input").value = "";
   $("input").style.height = "auto";
-  bubble("user", text);
+  bubble("user", att.label);
   history.push({ role: "user", content: text });
 
   generating = true; agentStop = false;
