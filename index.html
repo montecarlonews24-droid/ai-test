@@ -833,7 +833,12 @@ function parseAgentJSON(t){
   const a = t.indexOf("{"), b = t.lastIndexOf("}");
   if (a === -1 || b <= a) return null;
   let o;
-  try { o = JSON.parse(t.slice(a, b + 1)); } catch (e) { return null; }
+  try { o = JSON.parse(t.slice(a, b + 1)); }
+  catch (e) {
+    // small models often write "almost JSON" (raw line breaks, stray escapes): pull the fields out by hand
+    o = looseAgentJSON(t.slice(a, b + 1));
+    if (!o) return null;
+  }
   if (!o || typeof o !== "object" || Array.isArray(o)) return null;
   const get = (...ks) => { for (const k of Object.keys(o)) if (ks.includes(k.toLowerCase())) return o[k]; return undefined; };
   const action = get("action", "tool"), fin = get("final", "answer");
@@ -844,6 +849,37 @@ function parseAgentJSON(t){
   }
   if (typeof fin === "string") return { type: "final", text: fin.trim() };
   return null;
+}
+
+function unescapeJSONish(v){
+  return v.replace(/\\(u[0-9a-fA-F]{4}|.)/g, (m, c) => {
+    if (c[0] === "u" && c.length === 5) return String.fromCharCode(parseInt(c.slice(1), 16));
+    return ({ n: "\n", t: "\t", r: "", '"': '"', "\\": "\\", "/": "/", b: "", f: "" })[c] ?? c;
+  });
+}
+function looseAgentJSON(src){
+  const field = k => {
+    const m = src.match(new RegExp('"' + k + '"\\s*:\\s*"', "i"));
+    if (!m) return undefined;
+    let i = m.index + m[0].length, out = "";
+    for (; i < src.length; i++) {           // read up to the first unescaped quote
+      const ch = src[i];
+      if (ch === "\\") { out += ch + (src[i + 1] ?? ""); i++; continue; }
+      if (ch === '"') break;
+      out += ch;
+    }
+    return unescapeJSONish(out);
+  };
+  const action = field("ACTION") ?? field("action") ?? field("tool");
+  const fin = field("FINAL") ?? field("final");
+  if (action === undefined && fin === undefined) return null;
+  const o = {};
+  if (action !== undefined) o.ACTION = action;
+  if (fin !== undefined) o.FINAL = fin;
+  const name = field("NAME") ?? field("name"); if (name !== undefined) o.NAME = name;
+  const input = field("INPUT") ?? field("input") ?? field("content") ?? field("code");
+  if (input !== undefined) o.INPUT = input;
+  return o;
 }
 
 function parseAgent(raw){
