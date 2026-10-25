@@ -939,16 +939,32 @@ function restoreChat(){
   });
 }
 
+let lastFile = null;   // most recent file made by the agent, offered as context for follow-up edits
+
+function safeName(n){ return String(n || "").trim().replace(/[\\/:*?"<>|]/g, "_").slice(0, 80); }
+
 function fileCard(container, name, content, save = true){
-  if (save) { libAdd(name, content); if (turnFiles) turnFiles.push({ name, content }); }
+  if (save) { libAdd(name, content); if (turnFiles) turnFiles.push({ name, content }); lastFile = { name, content }; }
+  let cur = name;
   const card = document.createElement("div");
   card.className = "afile";
-  const isHtml = /\.html?$/i.test(name);
-  card.innerHTML = '<span class="fn"></span>' + (isHtml ? '<button type="button" class="pv">معاينة</button>' : '') +
-    '<button type="button">نسخ</button><button type="button">تنزيل</button>';
-  if (isHtml) card.querySelector(".pv").addEventListener("click", () => openPreview(name, content));
-  card.querySelector(".fn").textContent = "📄 " + name + " · " + content.length + " حرف";
-  const [copyBtn, dlBtn] = card.querySelectorAll("button:not(.pv)");
+  card.innerHTML = '<span class="fn"></span><button type="button" class="pv">معاينة</button>' +
+    '<button type="button" class="rn">تسمية</button><button type="button" class="cp">نسخ</button><button type="button" class="dl">تنزيل</button>';
+  const fn = card.querySelector(".fn"), pv = card.querySelector(".pv");
+  const label = () => {
+    fn.textContent = "📄 " + cur + " · " + content.length + " حرف";
+    pv.hidden = !/\.html?$/i.test(cur);
+  };
+  label();
+  pv.addEventListener("click", () => openPreview(cur, content));
+  card.querySelector(".rn").addEventListener("click", () => {
+    const n = safeName(prompt("الاسم الجديد للملف:", cur));
+    if (!n || n === cur) return;
+    cur = n; label();
+    libAdd(cur, content);                 // keep the renamed copy in "ملفاتي"
+    lastFile = { name: cur, content };
+  });
+  const copyBtn = card.querySelector(".cp");
   copyBtn.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(content); copyBtn.textContent = "تم النسخ"; }
     catch (e) {
@@ -956,11 +972,11 @@ function fileCard(container, name, content, save = true){
       ta.select(); try { document.execCommand("copy"); copyBtn.textContent = "تم النسخ"; } catch (_) {} ta.remove();
     }
   });
-  dlBtn.addEventListener("click", () => {
-    const type = /\.html?$/i.test(name) ? "text/html" : /\.json$/i.test(name) ? "application/json"
-      : /\.js$/i.test(name) ? "text/javascript" : "text/plain";
+  card.querySelector(".dl").addEventListener("click", () => {
+    const type = /\.html?$/i.test(cur) ? "text/html" : /\.json$/i.test(cur) ? "application/json"
+      : /\.js$/i.test(cur) ? "text/javascript" : "text/plain";
     const url = URL.createObjectURL(new Blob([content], { type: type + ";charset=utf-8" }));
-    const a = document.createElement("a"); a.href = url; a.download = name;
+    const a = document.createElement("a"); a.href = url; a.download = cur;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   });
@@ -1027,7 +1043,12 @@ async function runAgent(){
   body.append(stepsBox, filesBox, live, finalBox);
 
   const msgs = [{ role: "system", content: AGENT_SYS }, ...history.slice(-5)];
-  let finalText = "", toolsUsed = 0, langRetried = false;
+  // "change the colour", "rename it", "add a title"... about the file just made: give the model that file
+  if (!att.hasFile && lastFile && /عدّ?ل|غيّ?ر|أضف|اضف|احذف|كبّ?ر|صغّ?ر|اسم|سمّ?|الملف|نفس|لون|زر|خط|عنوان/.test(typed)) {
+    const body = lastFile.content.slice(0, ATTACH_MAX);
+    msgs[msgs.length - 1] = { role: "user", content: text + "\n\nالملف الحالي: " + lastFile.name + "\n```\n" + body + "\n```" };
+  }
+  let finalText = "", toolsUsed = 0, langRetried = false, fakeRetried = false;
 
   try {
     for (let step = 0; step <= AGENT_MAX_STEPS && !agentStop; step++) {
@@ -1080,6 +1101,15 @@ async function runAgent(){
           (last ? "\n\nانتهت الخطوات المسموحة. اكتب الآن FINAL: ثم الإجابة للمستخدم." : "") });
         continue;
       }
+      if (p.type === "final" && !toolsUsed && !fakeRetried && /أنشأت|تم إنشاء|إنشاء الملف|اسم الجديد|created/i.test(p.text)
+          && /ملف|file|index|html/i.test(text)) {
+        fakeRetried = true;
+        live.textContent = "…";
+        msgs.push({ role: "assistant", content: raw.slice(0, 1000) });
+        msgs.push({ role: "user", content: "لم تنشئ أي ملف بعد. استعمل الآن ACTION: create_file واكتب المحتوى كاملاً." });
+        step--;
+        continue;
+      }
       // a final answer — or an action after the step limit, which we show as text instead of running
       finalText = p.type === "final" ? p.text : clean(raw).trim();
       break;
@@ -1100,7 +1130,9 @@ async function runAgent(){
       finalBox.textContent = finalText || (toolsUsed ? "انتهت الخطوات." : "(لا يوجد رد)");
     }
     foot.textContent = toolsUsed ? toolsUsed + " أداة مستعملة" : "بدون أدوات";
-    if (finalText) history.push({ role: "assistant", content: finalText.slice(0, 1500) });
+    const made = (turnFiles || []).map(f => f.name);
+    const histText = made.length ? "(أنشأتُ الملف " + made.join("، ") + " باستعمال create_file)" : finalText.slice(0, 1500);
+    if (histText) history.push({ role: "assistant", content: histText });
     logAdd({ role: "agent", text: finalBox.textContent, files: turnFiles || [], foot: foot.textContent });
   } catch (err) {
     live.remove();
@@ -1129,6 +1161,7 @@ $("quickBar").addEventListener("click", e => {
 });
 
 restoreChat();
+{ const lib = loadJSON(LIB_KEY, []); if (lib[0]) lastFile = { name: lib[0].name, content: lib[0].content }; }
 
 $("send").addEventListener("click", () => {
   if (generating) { agentStop = true; engine?.interruptGenerate?.(); return; }
