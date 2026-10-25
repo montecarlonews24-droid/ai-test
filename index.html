@@ -665,7 +665,14 @@ function bubble(role, text){
 }
 function scroll(){ $("stage").scrollTop = $("stage").scrollHeight; }
 
-const clean = r => r.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
+// Qwen models sometimes drift into Chinese: strip CJK characters and map full-width punctuation
+const CJK_RE = /[\u2E80-\u2FFF\u3040-\u30FF\u3100-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/g;
+const FW_PUNCT = { "，": ", ", "。": ". ", "：": ": ", "；": "; ", "！": "! ", "？": "? ", "（": " (", "）": ") ", "、": ", ", "「": "\"", "」": "\"" };
+const cjkCount = r => (String(r).match(CJK_RE) || []).length;
+const clean = r => r.replace(/<think>[\s\S]*?(<\/think>|$)/g, "")
+  .replace(/[，。：；！？（）、「」]/g, c => FW_PUNCT[c] || " ")
+  .replace(CJK_RE, "")
+  .trimStart();
 
 async function send(){
   return runAgent();   // agent mode is permanent; the plain-chat code below is kept but no longer used
@@ -797,7 +804,8 @@ FINAL: الجواب للمستخدم بالعربية
 - إذا كانت المهمة لا تحتاج أداة فاكتب FINAL مباشرة.
 - لا تكتب OBSERVATION بنفسك ولا تخترع نتائج.
 - بعد إنشاء الملف اكتب FINAL واشرح باختصار ما فيه.
-- إذا أرفق المستخدم ملفاً وطلب تعديله، اكتب النسخة المعدّلة كاملة بـ create_file وبنفس اسم الملف.`;
+- إذا أرفق المستخدم ملفاً وطلب تعديله، اكتب النسخة المعدّلة كاملة بـ create_file وبنفس اسم الملف.
+- اكتب بالعربية أو الإنجليزية فقط، حسب لغة المستخدم. ممنوع منعاً باتاً استعمال اللغة الصينية أو أي حرف صيني، حتى في تعليقات الكود.`;
 
 function stripFence(s){
   const m = String(s).match(/```[\w.-]*[ \t]*\n?([\s\S]*?)(```|$)/);
@@ -1003,7 +1011,7 @@ async function runAgent(){
   body.append(stepsBox, filesBox, live, finalBox);
 
   const msgs = [{ role: "system", content: AGENT_SYS }, ...history.slice(-5)];
-  let finalText = "", toolsUsed = 0;
+  let finalText = "", toolsUsed = 0, langRetried = false;
 
   try {
     for (let step = 0; step <= AGENT_MAX_STEPS && !agentStop; step++) {
@@ -1028,6 +1036,15 @@ async function runAgent(){
         if (sp) status(undefined, undefined, sp.toFixed(1) + " tok/s");
       }
       if (agentStop) break;
+
+      if (!langRetried && cjkCount(raw) > 8) {
+        langRetried = true;
+        live.textContent = "…إعادة الكتابة بالعربية";
+        msgs.push({ role: "assistant", content: raw.slice(0, 2000) });
+        msgs.push({ role: "user", content: "كتبت بالصينية. أعد نفس الإجابة بالعربية فقط، وبنفس الصيغة (ACTION أو FINAL)، بدون أي حرف صيني." });
+        step--;
+        continue;
+      }
 
       const p = parseAgent(raw);
       if (p.type === "action" && step < AGENT_MAX_STEPS) {
