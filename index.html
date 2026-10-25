@@ -375,7 +375,7 @@ button:focus-visible{outline:3px solid #A9BCFF;outline-offset:2px}
   <div class="field">
     <label>وضع الوكيل</label>
     <div class="sub">النموذج بينفّذ المهمة بخطوات ويستعمل أدوات: تشغيل كود JavaScript، إنشاء ملف تحمّله، والبحث بمستنداتك. أقصى 3 خطوات. أفضل نموذج له: Qwen 2.5 Coder أو Qwen 2.5 ‑ 3B.</div>
-    <label class="toggle"><input type="checkbox" id="agentOn"> تفعيل وضع الوكيل</label>
+    <div class="sub" style="color:var(--live)">مفعّل دائماً.</div>
   </div>
 
   <button class="ghostbtn" id="clearChat">مسح المحادثة</button>
@@ -500,8 +500,6 @@ $("docFile").addEventListener("change", async e => {
   e.target.value = "";
 });
 
-$("agentOn").checked = store.get("agentOn", "0") === "1";
-$("agentOn").addEventListener("change", e => store.set("agentOn", e.target.checked ? "1" : "0"));
 
 $("ragOn").addEventListener("change", e => {
   store.set("ragEnabled", e.target.checked ? "1" : "0");
@@ -648,7 +646,7 @@ function scroll(){ $("stage").scrollTop = $("stage").scrollHeight; }
 const clean = r => r.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
 
 async function send(){
-  if ($("agentOn").checked) return runAgent();
+  return runAgent();   // agent mode is permanent; the plain-chat code below is kept but no longer used
   const typed = $("input").value.trim();
   if ((!typed && !attached) || !engine || generating) return;
   const att = takeAttachment(typed);
